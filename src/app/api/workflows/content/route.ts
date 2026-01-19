@@ -26,25 +26,25 @@ export async function POST(request: NextRequest) {
 
     // Get all required data
     const { data: project } = await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .select('*')
       .eq('id', projectId)
       .single();
 
     const { data: brief } = await supabase
-      .from('briefs')
+      .from('pisarz_briefs')
       .select('*')
       .eq('project_id', projectId)
       .single();
 
     const { data: sections } = await supabase
-      .from('content_sections')
+      .from('pisarz_content_sections')
       .select('*')
       .eq('project_id', projectId)
       .order('section_order', { ascending: true });
 
     const { data: selectedHeaders } = await supabase
-      .from('generated_headers')
+      .from('pisarz_generated_headers')
       .select('*')
       .eq('project_id', projectId)
       .eq('is_selected', true)
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
 
     // Create workflow run
     const { data: run } = await supabase
-      .from('workflow_runs')
+      .from('pisarz_workflow_runs')
       .insert({
         project_id: projectId,
         stage: 5,
@@ -68,20 +68,20 @@ export async function POST(request: NextRequest) {
 
     // Update project status
     await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .update({ status: 'content_generating', current_stage: 5 })
       .eq('id', projectId);
 
     // Get or create context store
     let { data: contextStore } = await supabase
-      .from('context_store')
+      .from('pisarz_context_store')
       .select('*')
       .eq('project_id', projectId)
       .single();
 
     if (!contextStore) {
       const { data: newContext } = await supabase
-        .from('context_store')
+        .from('pisarz_context_store')
         .insert({
           project_id: projectId,
           accumulated_content: '',
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
 
       // Update section status to processing
       await supabase
-        .from('content_sections')
+        .from('pisarz_content_sections')
         .update({ status: 'processing' })
         .eq('id', section.id);
 
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
 
           // Update section with generated content
           await supabase
-            .from('content_sections')
+            .from('pisarz_content_sections')
             .update({
               content_html: generatedContent,
               status: 'completed',
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
             `\n\n${section.heading_html}\n${generatedContent}`;
 
           await supabase
-            .from('context_store')
+            .from('pisarz_context_store')
             .update({
               accumulated_content: newAccumulatedContent,
               current_heading_index: i + 1,
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
       } catch (sectionError) {
         // Mark section as error but continue
         await supabase
-          .from('content_sections')
+          .from('pisarz_content_sections')
           .update({ status: 'error' })
           .eq('id', section.id);
 
@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
 
     // Combine all sections into final content
     const { data: completedSections } = await supabase
-      .from('content_sections')
+      .from('pisarz_content_sections')
       .select('*')
       .eq('project_id', projectId)
       .eq('status', 'completed')
@@ -201,21 +201,21 @@ export async function POST(request: NextRequest) {
 
     // Save or update final content
     const { data: existingContent } = await supabase
-      .from('generated_content')
+      .from('pisarz_generated_content')
       .select('id')
       .eq('project_id', projectId)
       .single();
 
     if (existingContent) {
       await supabase
-        .from('generated_content')
+        .from('pisarz_generated_content')
         .update({
           content_html: fullContentHtml,
           content_text: fullContentText,
         })
         .eq('project_id', projectId);
     } else {
-      await supabase.from('generated_content').insert({
+      await supabase.from('pisarz_generated_content').insert({
         project_id: projectId,
         content_html: fullContentHtml,
         content_text: fullContentText,
@@ -224,13 +224,13 @@ export async function POST(request: NextRequest) {
 
     // Update project status
     await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .update({ status: 'completed', current_stage: 5 })
       .eq('id', projectId);
 
     // Complete workflow run
     await supabase
-      .from('workflow_runs')
+      .from('pisarz_workflow_runs')
       .update({
         status: 'completed',
         completed_at: new Date().toISOString(),
@@ -252,7 +252,7 @@ export async function POST(request: NextRequest) {
     if (body.projectId) {
       const supabase = createServiceRoleClient();
       await supabase
-        .from('projects')
+        .from('pisarz_projects')
         .update({ status: 'error' })
         .eq('id', body.projectId);
     }

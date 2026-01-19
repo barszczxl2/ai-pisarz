@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
     // Get project data
     const { data: project, error: projectError } = await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .select('*')
       .eq('id', projectId)
       .single();
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     // Create workflow run record
     const { data: run } = await supabase
-      .from('workflow_runs')
+      .from('pisarz_workflow_runs')
       .insert({
         project_id: projectId,
         stage: 1,
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     // Update project status
     await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .update({ status: 'knowledge_building', current_stage: 1 })
       .eq('id', projectId);
 
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
             graphData = { raw: graphData };
           }
         }
-        await supabase.from('knowledge_graphs').insert({
+        await supabase.from('pisarz_knowledge_graphs').insert({
           project_id: projectId,
           graph_data: graphData,
         });
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
             infoData = { raw: infoData };
           }
         }
-        await supabase.from('information_graphs').insert({
+        await supabase.from('pisarz_information_graphs').insert({
           project_id: projectId,
           triplets: infoData,
         });
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
 
       // Save search phrases
       if (outputs.search_phrases || outputs.frazy) {
-        await supabase.from('search_phrases').insert({
+        await supabase.from('pisarz_search_phrases').insert({
           project_id: projectId,
           phrases: outputs.search_phrases || outputs.frazy,
         });
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
 
       // Save competitor headers
       if (outputs.competitor_headers || outputs.headings) {
-        await supabase.from('competitor_headers').insert({
+        await supabase.from('pisarz_competitor_headers').insert({
           project_id: projectId,
           headers: outputs.competitor_headers || outputs.headings,
         });
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
 
       // Complete workflow run
       await supabase
-        .from('workflow_runs')
+        .from('pisarz_workflow_runs')
         .update({
           status: 'completed',
           completed_at: new Date().toISOString(),
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
     const { projectId } = await request.json().catch(() => ({}));
     if (projectId) {
       await supabase
-        .from('projects')
+        .from('pisarz_projects')
         .update({ status: 'error' })
         .eq('id', projectId);
     }

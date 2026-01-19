@@ -5,7 +5,7 @@ export async function GET() {
   const supabase = await createServerSupabaseClient();
 
   const { data, error } = await supabase
-    .from('projects')
+    .from('pisarz_projects')
     .select('*')
     .order('created_at', { ascending: false });
 
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { data, error } = await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .insert({
         keyword,
         language: language || 'Polish',

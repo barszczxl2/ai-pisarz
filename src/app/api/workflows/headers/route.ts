@@ -20,25 +20,25 @@ export async function POST(request: NextRequest) {
 
     // Get project and related data
     const { data: project } = await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .select('*')
       .eq('id', projectId)
       .single();
 
     const { data: knowledgeGraph } = await supabase
-      .from('knowledge_graphs')
+      .from('pisarz_knowledge_graphs')
       .select('*')
       .eq('project_id', projectId)
       .single();
 
     const { data: searchPhrases } = await supabase
-      .from('search_phrases')
+      .from('pisarz_search_phrases')
       .select('*')
       .eq('project_id', projectId)
       .single();
 
     const { data: competitorHeaders } = await supabase
-      .from('competitor_headers')
+      .from('pisarz_competitor_headers')
       .select('*')
       .eq('project_id', projectId)
       .single();
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     // Create workflow run
     const { data: run } = await supabase
-      .from('workflow_runs')
+      .from('pisarz_workflow_runs')
       .insert({
         project_id: projectId,
         stage: 2,
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
 
       for (const { type, key } of headerTypes) {
         if (outputs[key]) {
-          await supabase.from('generated_headers').insert({
+          await supabase.from('pisarz_generated_headers').insert({
             project_id: projectId,
             header_type: type,
             headers_html: outputs[key],
@@ -111,13 +111,13 @@ export async function POST(request: NextRequest) {
 
       // Update project status
       await supabase
-        .from('projects')
+        .from('pisarz_projects')
         .update({ status: 'headers_generated', current_stage: 2 })
         .eq('id', projectId);
 
       // Complete workflow run
       await supabase
-        .from('workflow_runs')
+        .from('pisarz_workflow_runs')
         .update({
           status: 'completed',
           completed_at: new Date().toISOString(),

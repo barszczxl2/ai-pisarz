@@ -36,7 +36,7 @@ export default function DashboardPage() {
   async function loadProjects() {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .select('*')
       .order('updated_at', { ascending: false })
       .limit(5);
@@ -45,7 +45,7 @@ export default function DashboardPage() {
       setProjects(data);
 
       // Calculate stats
-      const { data: allProjects } = await supabase.from('projects').select('status');
+      const { data: allProjects } = await supabase.from('pisarz_projects').select('status');
       if (allProjects) {
         setStats({
           total: allProjects.length,

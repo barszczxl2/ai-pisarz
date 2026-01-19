@@ -23,12 +23,12 @@ export class Orchestrator {
     if (stage !== undefined) {
       update.current_stage = stage;
     }
-    await this.supabase.from('projects').update(update).eq('id', projectId);
+    await this.supabase.from('pisarz_projects').update(update).eq('id', projectId);
   }
 
   async createWorkflowRun(projectId: string, stage: number, stageName: string) {
     const { data } = await this.supabase
-      .from('workflow_runs')
+      .from('pisarz_workflow_runs')
       .insert({
         project_id: projectId,
         stage,
@@ -42,7 +42,7 @@ export class Orchestrator {
 
   async completeWorkflowRun(runId: string, status: 'completed' | 'error', errorMessage?: string) {
     await this.supabase
-      .from('workflow_runs')
+      .from('pisarz_workflow_runs')
       .update({
         status,
         error_message: errorMessage,
@@ -59,7 +59,7 @@ export class Orchestrator {
     try {
       // Get project data
       const { data: project } = await this.supabase
-        .from('projects')
+        .from('pisarz_projects')
         .select('*')
         .eq('id', projectId)
         .single();
@@ -79,7 +79,7 @@ export class Orchestrator {
 
         // Save knowledge graph
         if (outputs.knowledge_graph) {
-          await this.supabase.from('knowledge_graphs').insert({
+          await this.supabase.from('pisarz_knowledge_graphs').insert({
             project_id: projectId,
             graph_data: typeof outputs.knowledge_graph === 'string'
               ? JSON.parse(outputs.knowledge_graph)
@@ -89,7 +89,7 @@ export class Orchestrator {
 
         // Save information graph
         if (outputs.information_graph) {
-          await this.supabase.from('information_graphs').insert({
+          await this.supabase.from('pisarz_information_graphs').insert({
             project_id: projectId,
             triplets: typeof outputs.information_graph === 'string'
               ? JSON.parse(outputs.information_graph)
@@ -99,7 +99,7 @@ export class Orchestrator {
 
         // Save search phrases
         if (outputs.search_phrases) {
-          await this.supabase.from('search_phrases').insert({
+          await this.supabase.from('pisarz_search_phrases').insert({
             project_id: projectId,
             phrases: outputs.search_phrases,
           });
@@ -107,7 +107,7 @@ export class Orchestrator {
 
         // Save competitor headers
         if (outputs.competitor_headers) {
-          await this.supabase.from('competitor_headers').insert({
+          await this.supabase.from('pisarz_competitor_headers').insert({
             project_id: projectId,
             headers: outputs.competitor_headers,
           });
@@ -134,25 +134,25 @@ export class Orchestrator {
     try {
       // Get required data
       const { data: project } = await this.supabase
-        .from('projects')
+        .from('pisarz_projects')
         .select('*')
         .eq('id', projectId)
         .single();
 
       const { data: knowledgeGraph } = await this.supabase
-        .from('knowledge_graphs')
+        .from('pisarz_knowledge_graphs')
         .select('*')
         .eq('project_id', projectId)
         .single();
 
       const { data: searchPhrases } = await this.supabase
-        .from('search_phrases')
+        .from('pisarz_search_phrases')
         .select('*')
         .eq('project_id', projectId)
         .single();
 
       const { data: competitorHeaders } = await this.supabase
-        .from('competitor_headers')
+        .from('pisarz_competitor_headers')
         .select('*')
         .eq('project_id', projectId)
         .single();
@@ -183,7 +183,7 @@ export class Orchestrator {
 
         for (const { type, key } of headerTypes) {
           if (outputs[key]) {
-            await this.supabase.from('generated_headers').insert({
+            await this.supabase.from('pisarz_generated_headers').insert({
               project_id: projectId,
               header_type: type,
               headers_html: outputs[key],
@@ -212,13 +212,13 @@ export class Orchestrator {
 
     try {
       const { data: project } = await this.supabase
-        .from('projects')
+        .from('pisarz_projects')
         .select('*')
         .eq('id', projectId)
         .single();
 
       const { data: selectedHeaders } = await this.supabase
-        .from('generated_headers')
+        .from('pisarz_generated_headers')
         .select('*')
         .eq('project_id', projectId)
         .eq('is_selected', true)
@@ -239,7 +239,7 @@ export class Orchestrator {
       if (result.data.status === 'succeeded') {
         const outputs = result.data.outputs;
 
-        await this.supabase.from('rag_data').insert({
+        await this.supabase.from('pisarz_rag_data').insert({
           project_id: projectId,
           detailed_qa: outputs.dokladne || '',
           general_qa: outputs.ogolne || '',
@@ -265,31 +265,31 @@ export class Orchestrator {
 
     try {
       const { data: project } = await this.supabase
-        .from('projects')
+        .from('pisarz_projects')
         .select('*')
         .eq('id', projectId)
         .single();
 
       const { data: knowledgeGraph } = await this.supabase
-        .from('knowledge_graphs')
+        .from('pisarz_knowledge_graphs')
         .select('*')
         .eq('project_id', projectId)
         .single();
 
       const { data: informationGraph } = await this.supabase
-        .from('information_graphs')
+        .from('pisarz_information_graphs')
         .select('*')
         .eq('project_id', projectId)
         .single();
 
       const { data: searchPhrases } = await this.supabase
-        .from('search_phrases')
+        .from('pisarz_search_phrases')
         .select('*')
         .eq('project_id', projectId)
         .single();
 
       const { data: selectedHeaders } = await this.supabase
-        .from('generated_headers')
+        .from('pisarz_generated_headers')
         .select('*')
         .eq('project_id', projectId)
         .eq('is_selected', true)
@@ -321,7 +321,7 @@ export class Orchestrator {
           }
         }
 
-        await this.supabase.from('briefs').insert({
+        await this.supabase.from('pisarz_briefs').insert({
           project_id: projectId,
           brief_json: briefJson,
           brief_html: outputs.html || '',
@@ -338,11 +338,11 @@ export class Orchestrator {
             status: 'pending' as const,
           }));
 
-          await this.supabase.from('content_sections').insert(sections);
+          await this.supabase.from('pisarz_content_sections').insert(sections);
         }
 
         // Initialize context store
-        await this.supabase.from('context_store').upsert({
+        await this.supabase.from('pisarz_context_store').upsert({
           project_id: projectId,
           accumulated_content: '',
           current_heading_index: 0,
@@ -369,25 +369,25 @@ export class Orchestrator {
 
     try {
       const { data: project } = await this.supabase
-        .from('projects')
+        .from('pisarz_projects')
         .select('*')
         .eq('id', projectId)
         .single();
 
       const { data: brief } = await this.supabase
-        .from('briefs')
+        .from('pisarz_briefs')
         .select('*')
         .eq('project_id', projectId)
         .single();
 
       const { data: sections } = await this.supabase
-        .from('content_sections')
+        .from('pisarz_content_sections')
         .select('*')
         .eq('project_id', projectId)
         .order('section_order', { ascending: true });
 
       const { data: selectedHeaders } = await this.supabase
-        .from('generated_headers')
+        .from('pisarz_generated_headers')
         .select('*')
         .eq('project_id', projectId)
         .eq('is_selected', true)
@@ -399,14 +399,14 @@ export class Orchestrator {
 
       // Initialize or get context store
       let { data: contextStore } = await this.supabase
-        .from('context_store')
+        .from('pisarz_context_store')
         .select('*')
         .eq('project_id', projectId)
         .single();
 
       if (!contextStore) {
         const { data: newContext } = await this.supabase
-          .from('context_store')
+          .from('pisarz_context_store')
           .insert({
             project_id: projectId,
             accumulated_content: '',
@@ -425,7 +425,7 @@ export class Orchestrator {
 
         // Update section status to processing
         await this.supabase
-          .from('content_sections')
+          .from('pisarz_content_sections')
           .update({ status: 'processing' })
           .eq('id', section.id);
 
@@ -448,7 +448,7 @@ export class Orchestrator {
 
           // Update section with generated content
           await this.supabase
-            .from('content_sections')
+            .from('pisarz_content_sections')
             .update({
               content_html: generatedContent,
               status: 'completed',
@@ -460,7 +460,7 @@ export class Orchestrator {
             `\n\n${section.heading_html}\n${generatedContent}`;
 
           await this.supabase
-            .from('context_store')
+            .from('pisarz_context_store')
             .update({
               accumulated_content: newAccumulatedContent,
               current_heading_index: i + 1,
@@ -483,7 +483,7 @@ export class Orchestrator {
         } else {
           // Mark section as error
           await this.supabase
-            .from('content_sections')
+            .from('pisarz_content_sections')
             .update({ status: 'error' })
             .eq('id', section.id);
 
@@ -493,7 +493,7 @@ export class Orchestrator {
 
       // Combine all sections into final content
       const { data: completedSections } = await this.supabase
-        .from('content_sections')
+        .from('pisarz_content_sections')
         .select('*')
         .eq('project_id', projectId)
         .order('section_order', { ascending: true });
@@ -507,7 +507,7 @@ export class Orchestrator {
         .replace(/\n{3,}/g, '\n\n');
 
       // Save final content
-      await this.supabase.from('generated_content').upsert({
+      await this.supabase.from('pisarz_generated_content').upsert({
         project_id: projectId,
         content_html: fullContentHtml,
         content_text: fullContentText,

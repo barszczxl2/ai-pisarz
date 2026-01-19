@@ -20,13 +20,13 @@ export async function POST(request: NextRequest) {
 
     // Get project and selected headers
     const { data: project } = await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .select('*')
       .eq('id', projectId)
       .single();
 
     const { data: selectedHeaders } = await supabase
-      .from('generated_headers')
+      .from('pisarz_generated_headers')
       .select('*')
       .eq('project_id', projectId)
       .eq('is_selected', true)
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     // Create workflow run
     const { data: run } = await supabase
-      .from('workflow_runs')
+      .from('pisarz_workflow_runs')
       .insert({
         project_id: projectId,
         stage: 3,
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       const outputs = result.data.outputs || {};
 
       // Save RAG data
-      await supabase.from('rag_data').insert({
+      await supabase.from('pisarz_rag_data').insert({
         project_id: projectId,
         detailed_qa: outputs.dokladne || '',
         general_qa: outputs.ogolne || '',
@@ -85,13 +85,13 @@ export async function POST(request: NextRequest) {
 
       // Update project status
       await supabase
-        .from('projects')
+        .from('pisarz_projects')
         .update({ status: 'rag_created', current_stage: 3 })
         .eq('id', projectId);
 
       // Complete workflow run
       await supabase
-        .from('workflow_runs')
+        .from('pisarz_workflow_runs')
         .update({
           status: 'completed',
           completed_at: new Date().toISOString(),

@@ -26,31 +26,31 @@ export async function POST(request: NextRequest) {
 
     // Get all required data
     const { data: project } = await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .select('*')
       .eq('id', projectId)
       .single();
 
     const { data: knowledgeGraph } = await supabase
-      .from('knowledge_graphs')
+      .from('pisarz_knowledge_graphs')
       .select('*')
       .eq('project_id', projectId)
       .single();
 
     const { data: informationGraph } = await supabase
-      .from('information_graphs')
+      .from('pisarz_information_graphs')
       .select('*')
       .eq('project_id', projectId)
       .single();
 
     const { data: searchPhrases } = await supabase
-      .from('search_phrases')
+      .from('pisarz_search_phrases')
       .select('*')
       .eq('project_id', projectId)
       .single();
 
     const { data: selectedHeaders } = await supabase
-      .from('generated_headers')
+      .from('pisarz_generated_headers')
       .select('*')
       .eq('project_id', projectId)
       .eq('is_selected', true)
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
 
     // Create workflow run
     const { data: run } = await supabase
-      .from('workflow_runs')
+      .from('pisarz_workflow_runs')
       .insert({
         project_id: projectId,
         stage: 4,
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Save brief
-      await supabase.from('briefs').insert({
+      await supabase.from('pisarz_briefs').insert({
         project_id: projectId,
         brief_json: briefJson,
         brief_html: outputs.html || '',
@@ -134,11 +134,11 @@ export async function POST(request: NextRequest) {
           status: 'pending' as const,
         }));
 
-        await supabase.from('content_sections').insert(sections);
+        await supabase.from('pisarz_content_sections').insert(sections);
       }
 
       // Initialize context store
-      await supabase.from('context_store').upsert({
+      await supabase.from('pisarz_context_store').upsert({
         project_id: projectId,
         accumulated_content: '',
         current_heading_index: 0,
@@ -146,13 +146,13 @@ export async function POST(request: NextRequest) {
 
       // Update project status
       await supabase
-        .from('projects')
+        .from('pisarz_projects')
         .update({ status: 'brief_created', current_stage: 4 })
         .eq('id', projectId);
 
       // Complete workflow run
       await supabase
-        .from('workflow_runs')
+        .from('pisarz_workflow_runs')
         .update({
           status: 'completed',
           completed_at: new Date().toISOString(),

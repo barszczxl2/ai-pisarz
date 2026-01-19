@@ -51,7 +51,7 @@ export default function ProjectsPage() {
   async function loadProjects() {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .select('*')
       .order('created_at', { ascending: false });
 
@@ -65,7 +65,7 @@ export default function ProjectsPage() {
   async function deleteProject(projectId: string) {
     const supabase = getSupabaseClient();
     const { error } = await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .delete()
       .eq('id', projectId);
 

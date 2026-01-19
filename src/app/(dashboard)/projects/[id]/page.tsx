@@ -52,7 +52,7 @@ export default function ProjectDetailPage() {
     const supabase = getSupabaseClient();
 
     const { data: projectData } = await supabase
-      .from('projects')
+      .from('pisarz_projects')
       .select('*')
       .eq('id', projectId)
       .single();
@@ -63,7 +63,7 @@ export default function ProjectDetailPage() {
       // Load related data based on stage
       if (projectData.current_stage >= 2) {
         const { data: headersData } = await supabase
-          .from('generated_headers')
+          .from('pisarz_generated_headers')
           .select('*')
           .eq('project_id', projectId);
 
@@ -78,7 +78,7 @@ export default function ProjectDetailPage() {
 
       if (projectData.current_stage >= 4) {
         const { data: briefData } = await supabase
-          .from('briefs')
+          .from('pisarz_briefs')
           .select('*')
           .eq('project_id', projectId)
           .single();
@@ -90,7 +90,7 @@ export default function ProjectDetailPage() {
 
       if (projectData.current_stage >= 5) {
         const { data: sectionsData } = await supabase
-          .from('content_sections')
+          .from('pisarz_content_sections')
           .select('*')
           .eq('project_id', projectId)
           .order('section_order', { ascending: true });
@@ -101,7 +101,7 @@ export default function ProjectDetailPage() {
       }
 
       const { data: runsData } = await supabase
-        .from('workflow_runs')
+        .from('pisarz_workflow_runs')
         .select('*')
         .eq('project_id', projectId)
         .order('started_at', { ascending: false });
@@ -127,7 +127,7 @@ export default function ProjectDetailPage() {
         {
           event: '*',
           schema: 'public',
-          table: 'projects',
+          table: 'pisarz_projects',
           filter: `id=eq.${projectId}`,
         },
         (payload: { new: Record<string, unknown> | null }) => {
@@ -141,7 +141,7 @@ export default function ProjectDetailPage() {
         {
           event: '*',
           schema: 'public',
-          table: 'content_sections',
+          table: 'pisarz_content_sections',
           filter: `project_id=eq.${projectId}`,
         },
         (payload: { eventType: string; new: Record<string, unknown> | null }) => {
@@ -211,19 +211,19 @@ export default function ProjectDetailPage() {
 
       // Deselect all headers first
       await supabase
-        .from('generated_headers')
+        .from('pisarz_generated_headers')
         .update({ is_selected: false })
         .eq('project_id', projectId);
 
       // Select the chosen header
       await supabase
-        .from('generated_headers')
+        .from('pisarz_generated_headers')
         .update({ is_selected: true })
         .eq('id', selectedHeaderId);
 
       // Update project status
       await supabase
-        .from('projects')
+        .from('pisarz_projects')
         .update({ status: 'headers_selected' })
         .eq('id', projectId);
 
@@ -242,7 +242,7 @@ export default function ProjectDetailPage() {
 
     const supabase = getSupabaseClient();
     const { data } = await supabase
-      .from('generated_content')
+      .from('pisarz_generated_content')
       .select('*')
       .eq('project_id', projectId)
       .single();
@@ -269,7 +269,7 @@ export default function ProjectDetailPage() {
   async function copyContent() {
     const supabase = getSupabaseClient();
     const { data } = await supabase
-      .from('generated_content')
+      .from('pisarz_generated_content')
       .select('content_html')
       .eq('project_id', projectId)
       .single();

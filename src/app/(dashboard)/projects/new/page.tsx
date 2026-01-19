@@ -50,7 +50,7 @@ export default function NewProjectPage() {
     try {
       const supabase = getSupabaseClient();
       const { data, error } = await supabase
-        .from('projects')
+        .from('pisarz_projects')
         .insert({
           keyword: formData.keyword.trim(),
           language: formData.language,
