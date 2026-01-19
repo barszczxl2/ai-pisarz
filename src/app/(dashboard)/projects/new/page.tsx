@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSupabaseClient } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,20 +47,21 @@ export default function NewProjectPage() {
     setIsLoading(true);
 
     try {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase
-        .from('pisarz_projects')
-        .insert({
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           keyword: formData.keyword.trim(),
           language: formData.language,
           ai_overview_content: formData.ai_overview_content.trim() || null,
-          status: 'draft',
-          current_stage: 0,
-        })
-        .select()
-        .single();
+        }),
+      });
 
-      if (error) throw error;
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create project');
+      }
 
       toast.success('Projekt został utworzony');
       router.push(`/projects/${data.id}`);

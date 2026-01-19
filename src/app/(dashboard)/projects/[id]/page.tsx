@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { Pipeline } from '@/components/workflow/pipeline';
 import { HeaderSelection } from '@/components/workflow/header-selection';
 import { ContentPreview, ContentFull } from '@/components/workflow/content-preview';
+import { StageEditor } from '@/components/workflow/stage-editor';
 import {
   ArrowLeft,
   Play,
@@ -195,6 +196,79 @@ export default function ProjectDetailPage() {
       case 5: return 'content';
       default: return '';
     }
+  }
+
+  async function rerunFromStage(stage: number) {
+    if (!confirm(`Czy na pewno chcesz ponownie uruchomić od etapu "${STAGE_NAMES[stage]}"? Dane z kolejnych etapów zostaną usunięte.`)) {
+      return;
+    }
+
+    setIsRunning(true);
+
+    try {
+      const supabase = getSupabaseClient();
+
+      // Reset project to previous stage
+      const previousStage = stage - 1;
+      const statusMap: Record<number, string> = {
+        0: 'draft',
+        1: 'knowledge_building',
+        2: 'headers_generated',
+        3: 'rag_created',
+        4: 'brief_created',
+      };
+
+      // Delete data from current and later stages
+      if (stage <= 2) {
+        await supabase.from('pisarz_generated_headers').delete().eq('project_id', projectId);
+      }
+      if (stage <= 3) {
+        await supabase.from('pisarz_rag_data').delete().eq('project_id', projectId);
+      }
+      if (stage <= 4) {
+        await supabase.from('pisarz_briefs').delete().eq('project_id', projectId);
+        await supabase.from('pisarz_content_sections').delete().eq('project_id', projectId);
+        await supabase.from('pisarz_context_store').delete().eq('project_id', projectId);
+      }
+      if (stage <= 5) {
+        await supabase.from('pisarz_generated_content').delete().eq('project_id', projectId);
+      }
+
+      // Update project status
+      await supabase
+        .from('pisarz_projects')
+        .update({
+          current_stage: previousStage,
+          status: statusMap[previousStage] || 'draft',
+        })
+        .eq('id', projectId);
+
+      toast.success(`Zresetowano do etapu ${previousStage}. Uruchamiam ${STAGE_NAMES[stage]}...`);
+
+      // Run the workflow
+      await runWorkflow(stage);
+    } catch (error) {
+      console.error('Rerun error:', error);
+      toast.error('Nie udało się ponownie uruchomić workflow');
+      setIsRunning(false);
+    }
+  }
+
+  async function handleStageDataChanged(stage: number) {
+    // When stage data is edited, offer to regenerate from next stage
+    const nextStage = stage + 1;
+    if (nextStage <= 5 && project && project.current_stage >= nextStage) {
+      const shouldRegenerate = confirm(
+        `Dane etapu "${STAGE_NAMES[stage]}" zostały zmienione. Czy chcesz ponownie wygenerować kolejne etapy od "${STAGE_NAMES[nextStage]}"?`
+      );
+
+      if (shouldRegenerate) {
+        await rerunFromStage(nextStage);
+      }
+    }
+
+    // Reload project data
+    await loadProject();
   }
 
   async function selectHeaders(headerId: string) {
@@ -417,6 +491,16 @@ export default function ProjectDetailPage() {
         </CardContent>
       </Card>
 
+      {/* Stage Data Editor */}
+      {project.current_stage >= 1 && (
+        <StageEditor
+          projectId={projectId}
+          currentStage={project.current_stage}
+          onDataChanged={handleStageDataChanged}
+          isRunning={isRunning}
+        />
+      )}
+
       {/* Stage-specific content */}
       {project.status === 'headers_generated' && headers.length > 0 && (
         <Card>
@@ -498,13 +582,16 @@ export default function ProjectDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>Historia workflow</CardTitle>
+            <CardDescription>
+              Kliknij &quot;Uruchom ponownie&quot; aby zregenerować od wybranego etapu
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {workflowRuns.map((run) => (
                 <div
                   key={run.id}
-                  className="flex items-center justify-between rounded-lg border p-3"
+                  className="flex items-center justify-between rounded-lg border p-3 hover:bg-slate-50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
                     {run.status === 'completed' ? (
@@ -516,15 +603,29 @@ export default function ProjectDetailPage() {
                     ) : (
                       <div className="h-4 w-4 rounded-full bg-slate-200" />
                     )}
-                    <span className="font-medium">{run.stage_name}</span>
+                    <div>
+                      <span className="font-medium">{run.stage_name}</span>
+                      <span className="ml-2 text-xs text-slate-400">Etap {run.stage}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <div className="flex items-center gap-3">
                     {run.error_message && (
-                      <span className="text-red-500">{run.error_message}</span>
+                      <span className="text-sm text-red-500">{run.error_message}</span>
                     )}
-                    <span>
+                    <span className="text-sm text-slate-500">
                       {new Date(run.started_at).toLocaleString('pl-PL')}
                     </span>
+                    {run.status === 'completed' && !isRunning && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => rerunFromStage(run.stage)}
+                        className="ml-2"
+                      >
+                        <RotateCw className="mr-1 h-3 w-3" />
+                        Ponów
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}

@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
-// Dify API configuration
 const DIFY_API_BASE = process.env.DIFY_API_BASE_URL || 'https://api.dify.ai/v1';
 const DIFY_KNOWLEDGE_KEY = process.env.DIFY_KNOWLEDGE_WORKFLOW_KEY;
 
+// Create Supabase client for API routes
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
+
 export async function POST(request: NextRequest) {
-  const supabase = createServiceRoleClient();
+  const supabase = getSupabase();
 
   try {
     const { projectId } = await request.json();
@@ -48,6 +55,9 @@ export async function POST(request: NextRequest) {
       .update({ status: 'knowledge_building', current_stage: 1 })
       .eq('id', projectId);
 
+    // Prepare AIO value - default to "BRAK" if empty
+    const aioValue = project.ai_overview_content?.trim() || 'BRAK';
+
     // Call Dify API
     const difyResponse = await fetch(`${DIFY_API_BASE}/workflows/run`, {
       method: 'POST',
@@ -58,8 +68,8 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         inputs: {
           keyword: project.keyword,
-          language: project.language,
-          ai_overview_content: project.ai_overview_content || '',
+          language: project.language || 'Polish',
+          aio: aioValue,
         },
         response_mode: 'blocking',
         user: 'ai-pisarz',
@@ -92,37 +102,48 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Save information graph
-      if (outputs.information_graph) {
-        let infoData = outputs.information_graph;
-        if (typeof infoData === 'string') {
+      // Save information graph (from "grafinformacji" output)
+      const infoGraphData = outputs.grafinformacji || outputs.information_graph;
+      if (infoGraphData) {
+        let parsedData = infoGraphData;
+        if (typeof parsedData === 'string') {
           try {
-            infoData = JSON.parse(infoData);
+            // Remove markdown code blocks if present
+            const cleaned = parsedData.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            parsedData = JSON.parse(cleaned);
           } catch {
-            infoData = { raw: infoData };
+            parsedData = { raw: infoGraphData };
           }
         }
         await supabase.from('pisarz_information_graphs').insert({
           project_id: projectId,
-          triplets: infoData,
+          triplets: parsedData,
         });
       }
 
-      // Save search phrases
-      if (outputs.search_phrases || outputs.frazy) {
+      // Save search phrases (from "frazy z serp" output)
+      const phrasesData = outputs['frazy z serp'] || outputs.search_phrases || outputs.frazy;
+      if (phrasesData) {
         await supabase.from('pisarz_search_phrases').insert({
           project_id: projectId,
-          phrases: outputs.search_phrases || outputs.frazy,
+          phrases: phrasesData,
         });
       }
 
-      // Save competitor headers
-      if (outputs.competitor_headers || outputs.headings) {
+      // Save competitor headers (from "naglowki" output)
+      const headersData = outputs.naglowki || outputs.competitor_headers || outputs.headings;
+      if (headersData) {
         await supabase.from('pisarz_competitor_headers').insert({
           project_id: projectId,
-          headers: outputs.competitor_headers || outputs.headings,
+          headers: headersData,
         });
       }
+
+      // Update project status
+      await supabase
+        .from('pisarz_projects')
+        .update({ status: 'knowledge_built', current_stage: 1 })
+        .eq('id', projectId);
 
       // Complete workflow run
       await supabase
@@ -133,21 +154,22 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', run?.id);
 
-      return NextResponse.json({ success: true, outputs });
+      return NextResponse.json({
+        success: true,
+        outputs: {
+          knowledge_graph: outputs.knowledge_graph ? true : false,
+          information_graph: infoGraphData ? true : false,
+          search_phrases: phrasesData ? true : false,
+          competitor_headers: headersData ? true : false,
+        },
+        tokens: result.data.total_tokens,
+        elapsed_time: result.data.elapsed_time,
+      });
     } else {
       throw new Error(result.data?.error || 'Workflow failed');
     }
   } catch (error) {
     console.error('Knowledge workflow error:', error);
-
-    // Update project status to error
-    const { projectId } = await request.json().catch(() => ({}));
-    if (projectId) {
-      await supabase
-        .from('pisarz_projects')
-        .update({ status: 'error' })
-        .eq('id', projectId);
-    }
 
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },

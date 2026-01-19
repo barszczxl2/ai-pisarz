@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 const DIFY_API_BASE = process.env.DIFY_API_BASE_URL || 'https://api.dify.ai/v1';
 const DIFY_HEADERS_KEY = process.env.DIFY_HEADERS_WORKFLOW_KEY;
 
+// Create Supabase client for API routes
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
+
 export async function POST(request: NextRequest) {
-  const supabase = createServiceRoleClient();
+  const supabase = getSupabase();
 
   try {
     const { projectId } = await request.json();
