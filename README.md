@@ -1,36 +1,145 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI PISARZ - Generator treści SEO
 
-## Getting Started
+Aplikacja webowa do automatycznej generacji artykułów SEO z wykorzystaniem AI. Orkiestruje 5 workflow'ów Dify do tworzenia zoptymalizowanych treści.
 
-First, run the development server:
+## Stack technologiczny
+
+- **Frontend**: Next.js 14+ (App Router)
+- **UI**: Tailwind CSS + shadcn/ui
+- **Backend**: Next.js API Routes
+- **Baza danych**: Supabase (PostgreSQL)
+- **Real-time**: Supabase Realtime
+- **AI Workflows**: Dify API
+
+## Wymagania
+
+- Node.js 18+
+- Konto Supabase (https://supabase.com)
+- Konto Dify (https://cloud.dify.ai)
+
+## Instalacja
+
+### 1. Sklonuj projekt i zainstaluj zależności
+
+```bash
+cd ai-pisarz
+npm install
+```
+
+### 2. Skonfiguruj Supabase
+
+1. Utwórz nowy projekt na https://supabase.com
+2. W Supabase Dashboard przejdź do **SQL Editor**
+3. Wykonaj migrację z pliku `supabase/migrations/001_schema.sql`
+4. Skopiuj klucze API z **Project Settings > API**:
+   - Project URL
+   - Anon Key
+   - Service Role Key
+
+### 3. Skonfiguruj Dify
+
+1. Zaloguj się na https://cloud.dify.ai
+2. Zaimportuj 5 workflow'ów z folderu `/dify/`:
+   - `[SEO3.0] Budowa bazy wiedzy-ver1.yml`
+   - `[SEO 3.0] Budowa nagłówków - blog_11-24-25.yml`
+   - `[SEO 3.0] Budowa RAG (1)_11-24-25.yml`
+   - `[SEO 3.0] Content brief.yml`
+   - `[SEO 3.0] Generowanie contentu.yml`
+3. Dla każdego workflow skopiuj API Key z **Settings > API Access**
+
+### 4. Skonfiguruj zmienne środowiskowe
+
+```bash
+cp .env.local.example .env.local
+```
+
+Uzupełnij plik `.env.local`:
+
+```env
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Dify
+DIFY_API_BASE_URL=https://api.dify.ai/v1
+DIFY_KNOWLEDGE_WORKFLOW_KEY=app-xxx
+DIFY_HEADERS_WORKFLOW_KEY=app-xxx
+DIFY_RAG_WORKFLOW_KEY=app-xxx
+DIFY_BRIEF_WORKFLOW_KEY=app-xxx
+DIFY_CONTENT_WORKFLOW_KEY=app-xxx
+```
+
+### 5. Uruchom aplikację
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Aplikacja będzie dostępna pod adresem http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Pipeline generacji
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+1. BUDOWA WIEDZY       →  Analiza tematu i tworzenie grafu wiedzy
+   ↓ (automatycznie)
+2. GENEROWANIE NAGŁÓWKÓW  →  3 warianty nagłówków do wyboru
+   ↓ (wymaga wyboru użytkownika)
+3. BUDOWA RAG         →  Tworzenie bazy wiedzy
+   ↓ (automatycznie)
+4. TWORZENIE BRIEFU   →  Brief dla każdej sekcji
+   ↓ (automatycznie)
+5. GENEROWANIE TREŚCI →  Iteracyjna generacja nagłówek po nagłówku
+```
 
-## Learn More
+## Struktura projektu
 
-To learn more about Next.js, take a look at the following resources:
+```
+ai-pisarz/
+├── src/
+│   ├── app/
+│   │   ├── (dashboard)/
+│   │   │   ├── page.tsx          # Dashboard
+│   │   │   ├── projects/
+│   │   │   │   ├── page.tsx      # Lista projektów
+│   │   │   │   ├── new/page.tsx  # Nowy projekt
+│   │   │   │   └── [id]/page.tsx # Szczegóły projektu
+│   │   │   └── settings/page.tsx
+│   │   └── api/
+│   │       ├── projects/route.ts
+│   │       └── workflows/        # API dla każdego etapu
+│   ├── components/
+│   │   ├── ui/                   # shadcn/ui
+│   │   ├── layout/               # Sidebar, Header
+│   │   └── workflow/             # Pipeline, HeaderSelection
+│   ├── lib/
+│   │   ├── supabase/             # Klient Supabase
+│   │   ├── dify/                 # Klient Dify
+│   │   └── orchestrator/         # Logika orkiestracji
+│   └── types/
+│       └── database.ts           # Typy TypeScript
+└── supabase/
+    └── migrations/               # Schemat bazy danych
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Funkcjonalności
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Dashboard z przeglądem projektów i statystykami
+- Tworzenie nowych projektów SEO
+- Wizualizacja pipeline'u 5 etapów
+- Wybór wariantu nagłówków (3 opcje)
+- Real-time tracking postępu generacji
+- Podgląd generowanej treści w czasie rzeczywistym
+- Eksport do HTML/Markdown
 
-## Deploy on Vercel
+## Deployment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Aplikacja może być hostowana na:
+- Vercel (rekomendowane dla Next.js)
+- Netlify
+- Własny serwer z Node.js
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run build
+npm start
+```
