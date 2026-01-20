@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 const DIFY_API_BASE = process.env.DIFY_API_BASE_URL || 'https://api.dify.ai/v1';
 const DIFY_BRIEF_KEY = process.env.DIFY_BRIEF_WORKFLOW_KEY;
+
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
 interface BriefItem {
   heading: string;
@@ -11,7 +18,7 @@ interface BriefItem {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = createServiceRoleClient();
+  const supabase = getSupabase();
 
   try {
     const { projectId } = await request.json();
@@ -66,6 +73,20 @@ export async function POST(request: NextRequest) {
 
     if (!project || !knowledgeGraph || !informationGraph || !searchPhrases || !selectedHeaders) {
       return NextResponse.json({ error: 'Missing required data' }, { status: 400 });
+    }
+
+    // Check for already running workflows
+    const { data: runningWorkflows } = await supabase
+      .from('pisarz_workflow_runs')
+      .select('id, stage_name')
+      .eq('project_id', projectId)
+      .eq('status', 'running');
+
+    if (runningWorkflows && runningWorkflows.length > 0) {
+      return NextResponse.json(
+        { error: `Workflow "${runningWorkflows[0].stage_name}" jest już uruchomiony. Zatrzymaj go najpierw.` },
+        { status: 409 }
+      );
     }
 
     // Create workflow run

@@ -1,8 +1,8 @@
 // Database types for Supabase
 
-export type ProjectStatus = 'draft' | 'knowledge_building' | 'headers_generated' | 'headers_selected' | 'rag_created' | 'brief_created' | 'content_generating' | 'completed' | 'error';
+export type ProjectStatus = 'draft' | 'knowledge_building' | 'knowledge_built' | 'headers_generated' | 'headers_selected' | 'rag_created' | 'brief_created' | 'content_generating' | 'completed' | 'error';
 
-export type WorkflowStatus = 'pending' | 'running' | 'completed' | 'error';
+export type WorkflowStatus = 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
 
 export type HeaderType = 'rozbudowane' | 'h2' | 'pytania';
 
@@ -174,6 +174,7 @@ export const STAGE_NAMES: Record<number, string> = {
 export const STATUS_LABELS: Record<ProjectStatus, string> = {
   draft: 'Szkic',
   knowledge_building: 'Budowa wiedzy',
+  knowledge_built: 'Wiedza zbudowana',
   headers_generated: 'Nagłówki wygenerowane',
   headers_selected: 'Nagłówki wybrane',
   rag_created: 'RAG utworzony',

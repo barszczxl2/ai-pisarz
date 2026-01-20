@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -13,10 +13,10 @@ import { Pipeline } from '@/components/workflow/pipeline';
 import { HeaderSelection } from '@/components/workflow/header-selection';
 import { ContentPreview, ContentFull } from '@/components/workflow/content-preview';
 import { StageEditor } from '@/components/workflow/stage-editor';
+import { ProcessPanel } from '@/components/workflow/process-panel';
 import {
   ArrowLeft,
   Play,
-  Pause,
   RotateCw,
   Download,
   Loader2,
@@ -37,7 +37,6 @@ import { STATUS_LABELS, STAGE_NAMES } from '@/types/database';
 
 export default function ProjectDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const projectId = params.id as string;
 
   const [project, setProject] = useState<Project | null>(null);
@@ -48,6 +47,7 @@ export default function ProjectDetailPage() {
   const [selectedHeaderId, setSelectedHeaderId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const loadProject = useCallback(async () => {
     const supabase = getSupabaseClient();
@@ -178,6 +178,7 @@ export default function ProjectDetailPage() {
       }
 
       toast.success(`${STAGE_NAMES[stage]} zakończono pomyślnie`);
+      setRefreshKey(prev => prev + 1);
       await loadProject();
     } catch (error) {
       console.error('Workflow error:', error);
@@ -302,6 +303,7 @@ export default function ProjectDetailPage() {
         .eq('id', projectId);
 
       toast.success('Nagłówki zostały wybrane');
+      setRefreshKey(prev => prev + 1);
       await loadProject();
     } catch (error) {
       console.error('Error selecting headers:', error);
@@ -384,7 +386,7 @@ export default function ProjectDetailPage() {
       case 1:
         return project.current_stage === 0 || project.status === 'draft';
       case 2:
-        return project.current_stage === 1;
+        return project.status === 'knowledge_built' || project.current_stage === 1;
       case 3:
         return project.status === 'headers_selected';
       case 4:
@@ -400,7 +402,7 @@ export default function ProjectDetailPage() {
     if (project.status === 'completed') return null;
     if (project.status === 'error') return { stage: project.current_stage, label: 'Ponów' };
     if (project.current_stage === 0 || project.status === 'draft') return { stage: 1, label: 'Rozpocznij budowę wiedzy' };
-    if (project.current_stage === 1) return { stage: 2, label: 'Generuj nagłówki' };
+    if (project.status === 'knowledge_built') return { stage: 2, label: 'Generuj nagłówki' };
     if (project.status === 'headers_generated') return null; // Need to select headers
     if (project.status === 'headers_selected') return { stage: 3, label: 'Buduj RAG' };
     if (project.status === 'rag_created') return { stage: 4, label: 'Twórz brief' };
@@ -513,9 +515,19 @@ export default function ProjectDetailPage() {
         </CardContent>
       </Card>
 
+      {/* Process Panel */}
+      <ProcessPanel
+        projectId={projectId}
+        onProcessKilled={() => {
+          setRefreshKey(prev => prev + 1);
+          loadProject();
+        }}
+      />
+
       {/* Stage Data Editor */}
       {project.current_stage >= 1 && (
         <StageEditor
+          key={`stage-editor-${refreshKey}`}
           projectId={projectId}
           currentStage={project.current_stage}
           onDataChanged={handleStageDataChanged}

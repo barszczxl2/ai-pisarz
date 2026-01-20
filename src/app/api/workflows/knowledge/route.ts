@@ -37,6 +37,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
+    // Check for already running workflows
+    const { data: runningWorkflows } = await supabase
+      .from('pisarz_workflow_runs')
+      .select('id, stage_name')
+      .eq('project_id', projectId)
+      .eq('status', 'running');
+
+    if (runningWorkflows && runningWorkflows.length > 0) {
+      return NextResponse.json(
+        { error: `Workflow "${runningWorkflows[0].stage_name}" jest już uruchomiony. Zatrzymaj go najpierw.` },
+        { status: 409 }
+      );
+    }
+
     // Create workflow run record
     const { data: run } = await supabase
       .from('pisarz_workflow_runs')

@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 const DIFY_API_BASE = process.env.DIFY_API_BASE_URL || 'https://api.dify.ai/v1';
 const DIFY_RAG_KEY = process.env.DIFY_RAG_WORKFLOW_KEY;
 
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
+
 export async function POST(request: NextRequest) {
-  const supabase = createServiceRoleClient();
+  const supabase = getSupabase();
 
   try {
     const { projectId } = await request.json();
@@ -36,6 +43,20 @@ export async function POST(request: NextRequest) {
 
     if (!project || !selectedHeaders) {
       return NextResponse.json({ error: 'Missing required data' }, { status: 400 });
+    }
+
+    // Check for already running workflows
+    const { data: runningWorkflows } = await supabase
+      .from('pisarz_workflow_runs')
+      .select('id, stage_name')
+      .eq('project_id', projectId)
+      .eq('status', 'running');
+
+    if (runningWorkflows && runningWorkflows.length > 0) {
+      return NextResponse.json(
+        { error: `Workflow "${runningWorkflows[0].stage_name}" jest już uruchomiony. Zatrzymaj go najpierw.` },
+        { status: 409 }
+      );
     }
 
     // Create workflow run
@@ -78,11 +99,33 @@ export async function POST(request: NextRequest) {
     if (result.data?.status === 'succeeded') {
       const outputs = result.data.outputs || {};
 
+      // Handle different output formats from Dify workflow
+      // Old format: dokladne + ogolne separately
+      // New format: output (combined from Szablon node)
+      let detailedQa = outputs.dokladne || '';
+      let generalQa = outputs.ogolne || '';
+
+      // If we have combined output, use it
+      if (outputs.output && !detailedQa && !generalQa) {
+        // Combined output contains both - store in both fields or split
+        const combined = outputs.output as string;
+        // Try to split by '+' separator used in Szablon template
+        const parts = combined.split('+');
+        if (parts.length >= 2) {
+          generalQa = parts[0].trim();
+          detailedQa = parts.slice(1).join('+').trim();
+        } else {
+          // If can't split, store in both
+          detailedQa = combined;
+          generalQa = combined;
+        }
+      }
+
       // Save RAG data
       await supabase.from('pisarz_rag_data').insert({
         project_id: projectId,
-        detailed_qa: outputs.dokladne || '',
-        general_qa: outputs.ogolne || '',
+        detailed_qa: detailedQa,
+        general_qa: generalQa,
       });
 
       // Update project status
