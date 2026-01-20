@@ -31,30 +31,38 @@ export async function POST(request: NextRequest) {
       .eq('id', projectId)
       .single();
 
-    const { data: knowledgeGraph } = await supabase
+    // Use order + limit to handle duplicates (get latest)
+    const { data: kgArr } = await supabase
       .from('pisarz_knowledge_graphs')
       .select('*')
       .eq('project_id', projectId)
-      .single();
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const knowledgeGraph = kgArr?.[0];
 
-    const { data: informationGraph } = await supabase
+    const { data: igArr } = await supabase
       .from('pisarz_information_graphs')
       .select('*')
       .eq('project_id', projectId)
-      .single();
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const informationGraph = igArr?.[0];
 
-    const { data: searchPhrases } = await supabase
+    const { data: spArr } = await supabase
       .from('pisarz_search_phrases')
       .select('*')
       .eq('project_id', projectId)
-      .single();
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const searchPhrases = spArr?.[0];
 
-    const { data: selectedHeaders } = await supabase
+    const { data: shArr } = await supabase
       .from('pisarz_generated_headers')
       .select('*')
       .eq('project_id', projectId)
       .eq('is_selected', true)
-      .single();
+      .limit(1);
+    const selectedHeaders = shArr?.[0];
 
     if (!project || !knowledgeGraph || !informationGraph || !searchPhrases || !selectedHeaders) {
       return NextResponse.json({ error: 'Missing required data' }, { status: 400 });

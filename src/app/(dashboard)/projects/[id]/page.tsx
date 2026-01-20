@@ -471,6 +471,28 @@ export default function ProjectDetailPage() {
             interactive={false}
           />
 
+          {/* Info: wybierz nagłówki */}
+          {project.status === 'headers_generated' && (
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-center">
+              <p className="text-amber-800 font-medium">
+                Wybierz jeden z wariantów nagłówków poniżej
+              </p>
+            </div>
+          )}
+
+          {/* Wybrane nagłówki */}
+          {headers.some(h => h.is_selected) && project.current_stage >= 2 && (
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-green-800 font-medium mb-2">Wybrane nagłówki:</p>
+              <div
+                className="prose prose-sm max-w-none text-green-900"
+                dangerouslySetInnerHTML={{
+                  __html: headers.find(h => h.is_selected)?.headers_html || ''
+                }}
+              />
+            </div>
+          )}
+
           {nextAction && (
             <div className="mt-6 flex justify-center">
               <Button

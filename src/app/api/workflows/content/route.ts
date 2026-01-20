@@ -31,11 +31,14 @@ export async function POST(request: NextRequest) {
       .eq('id', projectId)
       .single();
 
-    const { data: brief } = await supabase
+    // Use order + limit to handle duplicates (get latest)
+    const { data: briefArr } = await supabase
       .from('pisarz_briefs')
       .select('*')
       .eq('project_id', projectId)
-      .single();
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const brief = briefArr?.[0];
 
     const { data: sections } = await supabase
       .from('pisarz_content_sections')
@@ -43,12 +46,13 @@ export async function POST(request: NextRequest) {
       .eq('project_id', projectId)
       .order('section_order', { ascending: true });
 
-    const { data: selectedHeaders } = await supabase
+    const { data: shArr } = await supabase
       .from('pisarz_generated_headers')
       .select('*')
       .eq('project_id', projectId)
       .eq('is_selected', true)
-      .single();
+      .limit(1);
+    const selectedHeaders = shArr?.[0];
 
     if (!project || !brief || !sections || sections.length === 0 || !selectedHeaders) {
       return NextResponse.json({ error: 'Missing required data' }, { status: 400 });

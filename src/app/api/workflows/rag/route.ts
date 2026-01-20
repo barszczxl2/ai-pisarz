@@ -25,12 +25,14 @@ export async function POST(request: NextRequest) {
       .eq('id', projectId)
       .single();
 
-    const { data: selectedHeaders } = await supabase
+    // Use limit to handle potential duplicates
+    const { data: shArr } = await supabase
       .from('pisarz_generated_headers')
       .select('*')
       .eq('project_id', projectId)
       .eq('is_selected', true)
-      .single();
+      .limit(1);
+    const selectedHeaders = shArr?.[0];
 
     if (!project || !selectedHeaders) {
       return NextResponse.json({ error: 'Missing required data' }, { status: 400 });

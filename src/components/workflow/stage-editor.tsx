@@ -58,35 +58,39 @@ export function StageEditor({ projectId, currentStage, onDataChanged, isRunning 
     const supabase = getSupabaseClient();
     const data: StageData = {};
 
-    // Stage 1 data
+    // Stage 1 data - use order + limit to handle duplicates
     if (currentStage >= 1) {
-      const { data: kg } = await supabase
+      const { data: kgArr } = await supabase
         .from('pisarz_knowledge_graphs')
         .select('*')
         .eq('project_id', projectId)
-        .single();
-      if (kg) data.knowledgeGraph = kg;
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (kgArr?.[0]) data.knowledgeGraph = kgArr[0];
 
-      const { data: ig } = await supabase
+      const { data: igArr } = await supabase
         .from('pisarz_information_graphs')
         .select('*')
         .eq('project_id', projectId)
-        .single();
-      if (ig) data.informationGraph = ig;
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (igArr?.[0]) data.informationGraph = igArr[0];
 
-      const { data: sp } = await supabase
+      const { data: spArr } = await supabase
         .from('pisarz_search_phrases')
         .select('*')
         .eq('project_id', projectId)
-        .single();
-      if (sp) data.searchPhrases = sp;
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (spArr?.[0]) data.searchPhrases = spArr[0];
 
-      const { data: ch } = await supabase
+      const { data: chArr } = await supabase
         .from('pisarz_competitor_headers')
         .select('*')
         .eq('project_id', projectId)
-        .single();
-      if (ch) data.competitorHeaders = ch;
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (chArr?.[0]) data.competitorHeaders = chArr[0];
     }
 
     // Stage 2 data
@@ -98,24 +102,26 @@ export function StageEditor({ projectId, currentStage, onDataChanged, isRunning 
       if (headers) data.generatedHeaders = headers;
     }
 
-    // Stage 3 data
+    // Stage 3 data - use order + limit to handle duplicates
     if (currentStage >= 3) {
-      const { data: rag } = await supabase
+      const { data: ragArr } = await supabase
         .from('pisarz_rag_data')
         .select('*')
         .eq('project_id', projectId)
-        .single();
-      if (rag) data.ragData = rag;
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (ragArr?.[0]) data.ragData = ragArr[0];
     }
 
-    // Stage 4 data
+    // Stage 4 data - use order + limit to handle duplicates
     if (currentStage >= 4) {
-      const { data: brief } = await supabase
+      const { data: briefArr } = await supabase
         .from('pisarz_briefs')
         .select('*')
         .eq('project_id', projectId)
-        .single();
-      if (brief) data.brief = brief;
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (briefArr?.[0]) data.brief = briefArr[0];
     }
 
     setStageData(data);

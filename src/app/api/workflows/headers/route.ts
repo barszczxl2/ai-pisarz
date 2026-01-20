@@ -33,23 +33,30 @@ export async function POST(request: NextRequest) {
       .eq('id', projectId)
       .single();
 
-    const { data: knowledgeGraph } = await supabase
+    // Use order + limit to handle duplicates (get latest)
+    const { data: knowledgeGraphs } = await supabase
       .from('pisarz_knowledge_graphs')
       .select('*')
       .eq('project_id', projectId)
-      .single();
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const knowledgeGraph = knowledgeGraphs?.[0];
 
-    const { data: searchPhrases } = await supabase
+    const { data: searchPhrasesArr } = await supabase
       .from('pisarz_search_phrases')
       .select('*')
       .eq('project_id', projectId)
-      .single();
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const searchPhrases = searchPhrasesArr?.[0];
 
-    const { data: competitorHeaders } = await supabase
+    const { data: competitorHeadersArr } = await supabase
       .from('pisarz_competitor_headers')
       .select('*')
       .eq('project_id', projectId)
-      .single();
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const competitorHeaders = competitorHeadersArr?.[0];
 
     if (!project || !knowledgeGraph || !searchPhrases) {
       return NextResponse.json({ error: 'Missing required data' }, { status: 400 });
