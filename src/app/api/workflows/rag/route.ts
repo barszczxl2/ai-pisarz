@@ -71,6 +71,17 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
+    // Get headings and log size
+    let headings = selectedHeaders.headers_html || '';
+    console.log(`RAG workflow - headings size: ${headings.length} chars`);
+
+    // Truncate if too large (max ~50k chars to stay under token limits)
+    const MAX_HEADINGS_LENGTH = 50000;
+    if (headings.length > MAX_HEADINGS_LENGTH) {
+      console.warn(`Headings too long (${headings.length}), truncating to ${MAX_HEADINGS_LENGTH}`);
+      headings = headings.substring(0, MAX_HEADINGS_LENGTH);
+    }
+
     // Call Dify API
     const difyResponse = await fetch(`${DIFY_API_BASE}/workflows/run`, {
       method: 'POST',
@@ -82,7 +93,7 @@ export async function POST(request: NextRequest) {
         inputs: {
           keyword: project.keyword,
           language: project.language,
-          headings: selectedHeaders.headers_html || '',
+          headings: headings,
         },
         response_mode: 'blocking',
         user: 'ai-pisarz',

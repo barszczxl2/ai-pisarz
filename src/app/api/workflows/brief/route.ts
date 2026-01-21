@@ -71,7 +71,8 @@ export async function POST(request: NextRequest) {
       .limit(1);
     const selectedHeaders = shArr?.[0];
 
-    if (!project || !knowledgeGraph || !informationGraph || !searchPhrases || !selectedHeaders) {
+    // informationGraph is optional - only generated when aio="BRAK"
+    if (!project || !knowledgeGraph || !searchPhrases || !selectedHeaders) {
       return NextResponse.json({ error: 'Missing required data' }, { status: 400 });
     }
 
@@ -116,9 +117,11 @@ export async function POST(request: NextRequest) {
           knowledge_graph: typeof knowledgeGraph.graph_data === 'string'
             ? knowledgeGraph.graph_data
             : JSON.stringify(knowledgeGraph.graph_data),
-          information_graph: typeof informationGraph.triplets === 'string'
-            ? informationGraph.triplets
-            : JSON.stringify(informationGraph.triplets),
+          information_graph: informationGraph?.triplets
+            ? (typeof informationGraph.triplets === 'string'
+              ? informationGraph.triplets
+              : JSON.stringify(informationGraph.triplets))
+            : '',
         },
         response_mode: 'blocking',
         user: 'ai-pisarz',

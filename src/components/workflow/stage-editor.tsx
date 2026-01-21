@@ -26,6 +26,28 @@ import {
 import { toast } from 'sonner';
 import { STAGE_NAMES } from '@/types/database';
 
+/**
+ * Formatuje brief HTML - usuwa markdown code blocks i tagi html/body
+ * TODO: HTML nie renderuje się poprawnie - do naprawienia
+ */
+function formatBriefHtml(raw: string): string {
+  if (!raw) return '<p class="text-slate-500">Brak briefu</p>';
+
+  // Remove markdown code blocks
+  let html = raw
+    .replace(/```html\n?/gi, '')
+    .replace(/```\n?/g, '')
+    .trim();
+
+  // Remove <html>, </html>, <body>, </body> tags
+  html = html
+    .replace(/<\/?html[^>]*>/gi, '')
+    .replace(/<\/?body[^>]*>/gi, '')
+    .trim();
+
+  return html || '<p class="text-slate-500">Brak briefu</p>';
+}
+
 interface StageData {
   knowledgeGraph?: { id: string; graph_data: unknown };
   informationGraph?: { id: string; triplets: unknown };
@@ -415,7 +437,7 @@ export function StageEditor({ projectId, currentStage, onDataChanged, isRunning 
                             <div
                               className="prose prose-sm max-w-none"
                               dangerouslySetInnerHTML={{
-                                __html: stageData.brief?.brief_html || 'Brak briefu'
+                                __html: formatBriefHtml(stageData.brief?.brief_html || '')
                               }}
                             />
                           </div>

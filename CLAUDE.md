@@ -273,3 +273,50 @@ Dify działa na porcie 80: http://localhost
 5. `brief_creating` → `brief_created`
 6. `content_generating` → `completed`
 7. `error` - błąd w dowolnym etapie
+
+---
+
+## 🐛 Znane błędy do naprawienia
+
+### 1. Brief HTML nie renderuje się poprawnie
+
+**Problem:** Brief workflow zwraca HTML opakowany w markdown code blocks (` ```html `) oraz tagi `<html><body>`. Mimo że funkcja `formatBriefHtml` usuwa te tagi, HTML wyświetla się jako tekst zamiast być renderowany.
+
+**Lokalizacja:**
+- `src/app/(dashboard)/projects/[id]/page.tsx` - karta "Brief contentu"
+- `src/components/workflow/stage-editor.tsx` - sekcja Stage 4
+
+**Obecne rozwiązanie:** Dodano funkcję `formatBriefHtml()` która usuwa markdown code blocks i tagi html/body, ale to nie rozwiązuje problemu.
+
+**Do zbadania:**
+- Sprawdzić console.log w przeglądarce (dodane debugowanie)
+- Możliwe że dane są escapowane w bazie danych
+- Sprawdzić czy Tailwind prose class działa poprawnie
+- Rozważyć użycie dedykowanego komponentu do renderowania HTML
+
+**Status:** Do naprawienia
+
+---
+
+### 2. RAG Workflow - przekroczenie limitu tokenów
+
+**Problem:** Dify RAG workflow przekracza limit 200k tokenów (żąda ~570k tokenów). Aplikacja wysyła tylko 222 znaki headings, więc problem jest wewnątrz workflow Dify.
+
+**Błąd:**
+```
+PluginInvokeError: This endpoint's maximum context length is 200000 tokens.
+However, you requested about 569607 tokens
+```
+
+**Przyczyna:** Workflow RAG w Dify prawdopodobnie:
+- Ładuje cały knowledge_graph który jest bardzo duży
+- Ma źle skonfigurowane node'y które łączą za dużo danych
+- Używa modelu z małym kontekstem
+
+**Do naprawienia w Dify:**
+1. Sprawdzić workflow RAG - które node'y generują dużo tokenów
+2. Zmniejszyć rozmiar knowledge_graph przed wysłaniem do modelu
+3. Użyć modelu z większym kontekstem (np. Claude 3.5 z 200k)
+4. Włączyć "middle-out" kompresję jeśli dostępna
+
+**Status:** Do naprawienia w Dify

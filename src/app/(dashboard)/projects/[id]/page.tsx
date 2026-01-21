@@ -35,6 +35,28 @@ import type {
 } from '@/types/database';
 import { STATUS_LABELS, STAGE_NAMES } from '@/types/database';
 
+/**
+ * Formatuje brief HTML - usuwa markdown code blocks i tagi html/body
+ * TODO: HTML nie renderuje się poprawnie - do naprawienia
+ */
+function formatBriefHtml(raw: string): string {
+  if (!raw) return '<p class="text-slate-500">Brak briefu</p>';
+
+  // Remove markdown code blocks
+  let html = raw
+    .replace(/```html\n?/gi, '')
+    .replace(/```\n?/g, '')
+    .trim();
+
+  // Remove <html>, </html>, <body>, </body> tags
+  html = html
+    .replace(/<\/?html[^>]*>/gi, '')
+    .replace(/<\/?body[^>]*>/gi, '')
+    .trim();
+
+  return html || '<p class="text-slate-500">Brak briefu</p>';
+}
+
 export default function ProjectDetailPage() {
   const params = useParams();
   const projectId = params.id as string;
@@ -44,7 +66,6 @@ export default function ProjectDetailPage() {
   const [sections, setSections] = useState<ContentSection[]>([]);
   const [brief, setBrief] = useState<Brief | null>(null);
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRun[]>([]);
-  const [selectedHeaderId, setSelectedHeaderId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -70,10 +91,6 @@ export default function ProjectDetailPage() {
 
         if (headersData) {
           setHeaders(headersData as GeneratedHeaders[]);
-          const selected = (headersData as GeneratedHeaders[]).find((h: GeneratedHeaders) => h.is_selected);
-          if (selected) {
-            setSelectedHeaderId(selected.id);
-          }
         }
       }
 
@@ -89,7 +106,8 @@ export default function ProjectDetailPage() {
         }
       }
 
-      if (projectData.current_stage >= 5) {
+      // Sections are created in brief workflow (stage 4), load them for stage >= 4
+      if (projectData.current_stage >= 4) {
         const { data: sectionsData } = await supabase
           .from('pisarz_content_sections')
           .select('*')
@@ -133,7 +151,12 @@ export default function ProjectDetailPage() {
         },
         (payload: { new: Record<string, unknown> | null }) => {
           if (payload.new) {
-            setProject(payload.new as unknown as Project);
+            const newProject = payload.new as unknown as Project;
+            setProject(newProject);
+            // Stop spinner when project completes or errors
+            if (newProject.status === 'completed' || newProject.status === 'error') {
+              setIsRunning(false);
+            }
           }
         }
       )
@@ -151,6 +174,31 @@ export default function ProjectDetailPage() {
             setSections(prev =>
               prev.map(s => (s.id === newSection.id ? newSection : s))
             );
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pisarz_workflow_runs',
+          filter: `project_id=eq.${projectId}`,
+        },
+        (payload: { eventType: string; new: Record<string, unknown> | null }) => {
+          if (payload.new) {
+            const newRun = payload.new as unknown as WorkflowRun;
+            setWorkflowRuns(prev => {
+              const exists = prev.find(r => r.id === newRun.id);
+              if (exists) {
+                return prev.map(r => (r.id === newRun.id ? newRun : r));
+              }
+              return [...prev, newRun].sort((a, b) => a.stage - b.stage);
+            });
+            // Stop spinner when workflow completes
+            if (newRun.status === 'completed' || newRun.status === 'error') {
+              setIsRunning(false);
+            }
           }
         }
       )
@@ -272,17 +320,16 @@ export default function ProjectDetailPage() {
     await loadProject();
   }
 
-  async function selectHeaders(headerId: string) {
-    setSelectedHeaderId(headerId);
-  }
-
-  async function confirmHeaderSelection() {
-    if (!selectedHeaderId) return;
+  async function confirmHeaderSelection(selectedHeaders: string[]) {
+    if (selectedHeaders.length === 0) return;
 
     setIsRunning(true);
 
     try {
       const supabase = getSupabaseClient();
+
+      // Build HTML from selected individual headers (from multiple variants)
+      const selectedHeadersHtml = selectedHeaders.join('\n');
 
       // Deselect all headers first
       await supabase
@@ -290,11 +337,18 @@ export default function ProjectDetailPage() {
         .update({ is_selected: false })
         .eq('project_id', projectId);
 
-      // Select the chosen header
-      await supabase
-        .from('pisarz_generated_headers')
-        .update({ is_selected: true })
-        .eq('id', selectedHeaderId);
+      // Update the first header record with combined selected headers
+      // This will be used by RAG and Brief workflows
+      const firstHeader = headers[0];
+      if (firstHeader) {
+        await supabase
+          .from('pisarz_generated_headers')
+          .update({
+            is_selected: true,
+            headers_html: selectedHeadersHtml
+          })
+          .eq('id', firstHeader.id);
+      }
 
       // Update project status
       await supabase
@@ -302,7 +356,7 @@ export default function ProjectDetailPage() {
         .update({ status: 'headers_selected' })
         .eq('id', projectId);
 
-      toast.success('Nagłówki zostały wybrane');
+      toast.success(`Wybrano ${selectedHeaders.length} nagłówków`);
       setRefreshKey(prev => prev + 1);
       await loadProject();
     } catch (error) {
@@ -343,16 +397,29 @@ export default function ProjectDetailPage() {
   }
 
   async function copyContent() {
-    const supabase = getSupabaseClient();
-    const { data } = await supabase
-      .from('pisarz_generated_content')
-      .select('content_html')
-      .eq('project_id', projectId)
-      .single();
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from('pisarz_generated_content')
+        .select('content_html')
+        .eq('project_id', projectId)
+        .single();
 
-    if (data?.content_html) {
-      await navigator.clipboard.writeText(data.content_html);
-      toast.success('Skopiowano do schowka');
+      if (error) {
+        console.error('Error fetching content:', error);
+        toast.error('Błąd pobierania treści');
+        return;
+      }
+
+      if (data?.content_html) {
+        await navigator.clipboard.writeText(data.content_html);
+        toast.success('Skopiowano do schowka');
+      } else {
+        toast.error('Brak treści do skopiowania');
+      }
+    } catch (err) {
+      console.error('Copy error:', err);
+      toast.error('Błąd kopiowania');
     }
   }
 
@@ -541,14 +608,12 @@ export default function ProjectDetailPage() {
           <CardHeader>
             <CardTitle>Wybierz nagłówki</CardTitle>
             <CardDescription>
-              Wybierz jeden z trzech wygenerowanych wariantów nagłówków
+              Wybierz nagłówki z dowolnych wariantów i ułóż je w odpowiedniej kolejności
             </CardDescription>
           </CardHeader>
           <CardContent>
             <HeaderSelection
               headers={headers}
-              selectedHeaderId={selectedHeaderId}
-              onSelect={selectHeaders}
               onConfirm={confirmHeaderSelection}
               isLoading={isRunning}
             />
@@ -569,7 +634,7 @@ export default function ProjectDetailPage() {
             <ScrollArea className="h-[400px]">
               <div
                 className="prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: brief.brief_html || '' }}
+                dangerouslySetInnerHTML={{ __html: formatBriefHtml(brief.brief_html || '') }}
               />
             </ScrollArea>
           </CardContent>
@@ -577,7 +642,7 @@ export default function ProjectDetailPage() {
       )}
 
       {/* Content generation progress */}
-      {(project.status === 'content_generating' || project.status === 'completed') &&
+      {(project.status === 'brief_created' || project.status === 'content_generating' || project.status === 'completed') &&
         sections.length > 0 && (
           <Card>
             <CardHeader>
@@ -587,10 +652,15 @@ export default function ProjectDetailPage() {
                     <CheckCircle className="h-5 w-5 text-green-500" />
                     Wygenerowana treść
                   </>
-                ) : (
+                ) : project.status === 'content_generating' ? (
                   <>
                     <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
                     Generowanie treści...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-5 w-5 text-slate-500" />
+                    Sekcje do wygenerowania ({sections.length})
                   </>
                 )}
               </CardTitle>
@@ -602,7 +672,7 @@ export default function ProjectDetailPage() {
                 <ContentPreview
                   sections={sections}
                   currentSectionIndex={
-                    sections.findIndex(s => s.status === 'processing') ||
+                    sections.findIndex(s => s.status === 'processing') ??
                     sections.filter(s => s.status === 'completed').length
                   }
                 />
