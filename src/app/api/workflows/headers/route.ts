@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-
-const DIFY_API_BASE = process.env.DIFY_API_BASE_URL || 'https://api.dify.ai/v1';
-const DIFY_HEADERS_KEY = process.env.DIFY_HEADERS_WORKFLOW_KEY;
+import { getDifyClient } from '@/lib/dify/client';
 
 // Create Supabase client for API routes
 function getSupabase() {
@@ -22,7 +20,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
     }
 
-    if (!DIFY_HEADERS_KEY) {
+    if (!process.env.DIFY_HEADERS_WORKFLOW_KEY) {
       return NextResponse.json({ error: 'Dify API key not configured' }, { status: 500 });
     }
 
@@ -88,36 +86,23 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    // Call Dify API
-    const difyResponse = await fetch(`${DIFY_API_BASE}/workflows/run`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${DIFY_HEADERS_KEY}`,
-        'Content-Type': 'application/json',
+    // Call Dify API with streaming to get detailed token info
+    const difyClient = getDifyClient();
+    const { result, tokenDetails, totalTokens } = await difyClient.runWorkflowStreaming(
+      'headers',
+      {
+        keyword: project.keyword,
+        language: project.language,
+        frazy: searchPhrases.phrases || '',
+        graf: typeof knowledgeGraph.graph_data === 'string'
+          ? knowledgeGraph.graph_data
+          : JSON.stringify(knowledgeGraph.graph_data),
+        headings: competitorHeaders?.headers || '',
       },
-      body: JSON.stringify({
-        inputs: {
-          keyword: project.keyword,
-          language: project.language,
-          frazy: searchPhrases.phrases || '',
-          graf: typeof knowledgeGraph.graph_data === 'string'
-            ? knowledgeGraph.graph_data
-            : JSON.stringify(knowledgeGraph.graph_data),
-          headings: competitorHeaders?.headers || '',
-        },
-        response_mode: 'blocking',
-        user: 'ai-pisarz',
-      }),
-    });
+      'ai-pisarz'
+    );
 
-    if (!difyResponse.ok) {
-      const errorText = await difyResponse.text();
-      throw new Error(`Dify API error: ${difyResponse.status} - ${errorText}`);
-    }
-
-    const result = await difyResponse.json();
-
-    if (result.data?.status === 'succeeded') {
+    if (result?.data?.status === 'succeeded') {
       const outputs = result.data.outputs || {};
 
       // Save three types of headers
@@ -144,18 +129,20 @@ export async function POST(request: NextRequest) {
         .update({ status: 'headers_generated', current_stage: 2 })
         .eq('id', projectId);
 
-      // Complete workflow run
+      // Complete workflow run with detailed token info
       await supabase
         .from('pisarz_workflow_runs')
         .update({
           status: 'completed',
           completed_at: new Date().toISOString(),
+          total_tokens: totalTokens || result.data.total_tokens || 0,
+          token_details: tokenDetails,
         })
         .eq('id', run?.id);
 
-      return NextResponse.json({ success: true, outputs });
+      return NextResponse.json({ success: true, outputs, tokenDetails });
     } else {
-      throw new Error(result.data?.error || 'Workflow failed');
+      throw new Error(result?.data?.error || 'Workflow failed');
     }
   } catch (error) {
     console.error('Headers workflow error:', error);

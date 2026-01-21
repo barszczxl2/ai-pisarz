@@ -81,7 +81,7 @@ export class DifyClient {
     inputs: DifyWorkflowInputs,
     userId: string = 'default-user',
     onEvent?: (event: DifyStreamEvent) => void
-  ): Promise<DifyWorkflowResult | null> {
+  ): Promise<DifyStreamingResult> {
     const apiKey = this.getApiKey(workflowType);
 
     const response = await fetch(`${this.baseUrl}/workflows/run`, {
@@ -109,20 +109,45 @@ export class DifyClient {
 
     const decoder = new TextDecoder();
     let result: DifyWorkflowResult | null = null;
+    const tokenDetails: NodeTokenDetail[] = [];
+    let totalTokens = 0;
+    let buffer = '';
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
       for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+
         try {
           const jsonStr = line.slice(6); // Remove 'data: ' prefix
           if (jsonStr.trim()) {
             const event = JSON.parse(jsonStr) as DifyStreamEvent;
             onEvent?.(event);
+
+            // Collect token details from node_finished events
+            if (event.event === 'node_finished' && event.data) {
+              const metadata = event.data.execution_metadata;
+              if (metadata && metadata.total_tokens && metadata.total_tokens > 0) {
+                const nodeDetail: NodeTokenDetail = {
+                  node_id: event.data.node_id || event.data.id || 'unknown',
+                  node_type: event.data.node_type || 'unknown',
+                  node_title: event.data.title || 'Unknown Node',
+                  total_tokens: metadata.total_tokens,
+                  model_name: metadata.model_name,
+                  model_provider: metadata.model_provider,
+                  prompt_tokens: metadata.prompt_tokens,
+                  completion_tokens: metadata.completion_tokens,
+                };
+                tokenDetails.push(nodeDetail);
+                totalTokens += metadata.total_tokens;
+              }
+            }
 
             if (event.event === 'workflow_finished') {
               result = {
@@ -130,16 +155,31 @@ export class DifyClient {
                 task_id: event.task_id,
                 data: event.data as DifyWorkflowResult['data'],
               };
+              // Use workflow total_tokens as fallback if no node details collected
+              if (totalTokens === 0 && event.data.total_tokens) {
+                totalTokens = event.data.total_tokens;
+              }
             }
           }
         } catch (e) {
-          console.warn('Failed to parse SSE event:', e);
+          console.warn('Failed to parse SSE event:', line, e);
         }
       }
     }
 
-    return result;
+    return { result, tokenDetails, totalTokens };
   }
+}
+
+export interface NodeTokenDetail {
+  node_id: string;
+  node_type: string;
+  node_title: string;
+  total_tokens: number;
+  model_name?: string;
+  model_provider?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
 }
 
 export interface DifyStreamEvent {
@@ -157,7 +197,28 @@ export interface DifyStreamEvent {
     total_steps?: number;
     created_at?: number;
     finished_at?: number;
+    // Node-specific fields (for node_finished event)
+    node_id?: string;
+    node_type?: string;
+    title?: string;
+    execution_metadata?: {
+      total_tokens?: number;
+      total_price?: number;
+      currency?: string;
+      // LLM-specific metadata
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      // Model info (may be nested differently)
+      model_name?: string;
+      model_provider?: string;
+    };
   };
+}
+
+export interface DifyStreamingResult {
+  result: DifyWorkflowResult | null;
+  tokenDetails: NodeTokenDetail[];
+  totalTokens: number;
 }
 
 // Singleton instance

@@ -354,3 +354,16 @@ However, you requested about 569607 tokens
 4. Włączyć "middle-out" kompresję jeśli dostępna
 
 **Status:** Do naprawienia w Dify
+
+---
+
+## 🔄 Punkty przywracania (Restore Points)
+
+### Restore Point 1 - 2026-01-21
+**Commit:** `9e03a32`
+**Opis:** Aplikacja działa, dodane debug logging do Brief workflow, anti-repetition system wyłączony (nie wdrożony w Dify)
+
+**Aby przywrócić ten stan:**
+```bash
+git reset --hard 9e03a32
+```

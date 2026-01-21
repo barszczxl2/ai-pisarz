@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Pipeline } from '@/components/workflow/pipeline';
 import { HeaderSelection } from '@/components/workflow/header-selection';
 import { ContentPreview, ContentFull } from '@/components/workflow/content-preview';
@@ -24,6 +25,8 @@ import {
   CheckCircle,
   FileText,
   Copy,
+  ChevronDown,
+  Coins,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
@@ -32,6 +35,7 @@ import type {
   ContentSection,
   Brief,
   WorkflowRun,
+  TokenDetail,
 } from '@/types/database';
 import { STATUS_LABELS, STAGE_NAMES } from '@/types/database';
 
@@ -519,6 +523,11 @@ export default function ProjectDetailPage() {
             >
               {STATUS_LABELS[project.status]}
             </Badge>
+            {workflowRuns.length > 0 && (
+              <Badge variant="outline" className="text-slate-500">
+                {workflowRuns.reduce((sum, run) => sum + (run.total_tokens || 0), 0).toLocaleString('pl-PL')} tokenów
+              </Badge>
+            )}
           </div>
         </div>
 
@@ -708,45 +717,85 @@ export default function ProjectDetailPage() {
           <CardContent>
             <div className="space-y-2">
               {workflowRuns.map((run) => (
-                <div
-                  key={run.id}
-                  className="flex items-center justify-between rounded-lg border p-3 hover:bg-slate-50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    {run.status === 'completed' ? (
-                      <CheckCircle className="h-4 w-4 text-green-500" />
-                    ) : run.status === 'error' ? (
-                      <AlertCircle className="h-4 w-4 text-red-500" />
-                    ) : run.status === 'running' ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                    ) : (
-                      <div className="h-4 w-4 rounded-full bg-slate-200" />
-                    )}
-                    <div>
-                      <span className="font-medium">{run.stage_name}</span>
-                      <span className="ml-2 text-xs text-slate-400">Etap {run.stage}</span>
+                <Collapsible key={run.id}>
+                  <div className="rounded-lg border hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center justify-between p-3">
+                      <div className="flex items-center gap-3">
+                        {run.status === 'completed' ? (
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : run.status === 'error' ? (
+                          <AlertCircle className="h-4 w-4 text-red-500" />
+                        ) : run.status === 'running' ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                        ) : (
+                          <div className="h-4 w-4 rounded-full bg-slate-200" />
+                        )}
+                        <div>
+                          <span className="font-medium">{run.stage_name}</span>
+                          <span className="ml-2 text-xs text-slate-400">Etap {run.stage}</span>
+                        </div>
+                        {run.total_tokens && run.total_tokens > 0 && (
+                          <Badge variant="outline" className="ml-2 text-xs">
+                            <Coins className="h-3 w-3 mr-1" />
+                            {run.total_tokens.toLocaleString('pl-PL')}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {run.error_message && (
+                          <span className="text-sm text-red-500">{run.error_message}</span>
+                        )}
+                        <span className="text-sm text-slate-500">
+                          {new Date(run.started_at).toLocaleString('pl-PL')}
+                        </span>
+                        {run.token_details && run.token_details.length > 0 && (
+                          <CollapsibleTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </CollapsibleTrigger>
+                        )}
+                        {run.status === 'completed' && !isRunning && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => rerunFromStage(run.stage)}
+                          >
+                            <RotateCw className="mr-1 h-3 w-3" />
+                            Ponów
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {run.error_message && (
-                      <span className="text-sm text-red-500">{run.error_message}</span>
+                    {run.token_details && run.token_details.length > 0 && (
+                      <CollapsibleContent>
+                        <div className="px-3 pb-3 pt-0">
+                          <div className="rounded bg-slate-50 p-2 text-xs">
+                            <div className="font-medium mb-2 text-slate-600">Szczegóły tokenów:</div>
+                            <div className="space-y-1">
+                              {run.token_details.map((detail, idx) => (
+                                <div key={idx} className="flex justify-between items-center py-1 border-b border-slate-100 last:border-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-slate-500">{detail.node_type}</span>
+                                    <span className="font-medium">{detail.node_title}</span>
+                                    {detail.model_name && (
+                                      <Badge variant="secondary" className="text-[10px] h-4">
+                                        {detail.model_name}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <span className="font-mono text-slate-700">
+                                    {detail.total_tokens.toLocaleString('pl-PL')}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </CollapsibleContent>
                     )}
-                    <span className="text-sm text-slate-500">
-                      {new Date(run.started_at).toLocaleString('pl-PL')}
-                    </span>
-                    {run.status === 'completed' && !isRunning && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => rerunFromStage(run.stage)}
-                        className="ml-2"
-                      >
-                        <RotateCw className="mr-1 h-3 w-3" />
-                        Ponów
-                      </Button>
-                    )}
                   </div>
-                </div>
+                </Collapsible>
               ))}
             </div>
           </CardContent>

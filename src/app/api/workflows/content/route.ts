@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getDifyClient, NodeTokenDetail } from '@/lib/dify/client';
 // TODO: Włączyć po wdrożeniu w Dify
 // import {
 //   processSectionForContext,
@@ -8,9 +9,6 @@ import { createClient } from '@supabase/supabase-js';
 //   buildAntiRepetitionInstruction,
 //   SectionSummary,
 // } from '@/lib/summarizer';
-
-const DIFY_API_BASE = process.env.DIFY_API_BASE_URL || 'https://api.dify.ai/v1';
-const DIFY_CONTENT_KEY = process.env.DIFY_CONTENT_WORKFLOW_KEY;
 
 function getSupabase() {
   return createClient(
@@ -35,7 +33,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
     }
 
-    if (!DIFY_CONTENT_KEY) {
+    if (!process.env.DIFY_CONTENT_WORKFLOW_KEY) {
       return NextResponse.json({ error: 'Dify API key not configured' }, { status: 500 });
     }
 
@@ -143,6 +141,9 @@ export async function POST(request: NextRequest) {
 
     const startIndex = contextStore?.current_heading_index || 0;
     const briefItems = (brief.brief_json as BriefItem[]) || [];
+    let totalTokens = 0;
+    const allTokenDetails: NodeTokenDetail[] = [];
+    const difyClient = getDifyClient();
 
     // Iterate through sections
     for (let i = startIndex; i < sections.length; i++) {
@@ -156,38 +157,32 @@ export async function POST(request: NextRequest) {
         .eq('id', section.id);
 
       try {
-        // Call Dify API for this section
-        const difyResponse = await fetch(`${DIFY_API_BASE}/workflows/run`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${DIFY_CONTENT_KEY}`,
-            'Content-Type': 'application/json',
+        // Call Dify API with streaming for this section
+        const { result, tokenDetails, totalTokens: sectionTokens } = await difyClient.runWorkflowStreaming(
+          'content',
+          {
+            naglowek: section.heading_html,
+            language: project.language,
+            knowledge: briefItem?.knowledge || section.heading_knowledge || '',
+            keywords: briefItem?.keywords || section.heading_keywords || '',
+            headings: selectedHeaders.headers_html || '',
+            done: contextStore?.accumulated_content || '',
+            keyword: project.keyword,
+            instruction: '',
           },
-          body: JSON.stringify({
-            inputs: {
-              naglowek: section.heading_html,
-              language: project.language,
-              knowledge: briefItem?.knowledge || section.heading_knowledge || '',
-              keywords: briefItem?.keywords || section.heading_keywords || '',
-              headings: selectedHeaders.headers_html || '',
-              done: contextStore?.accumulated_content || '',
-              keyword: project.keyword,
-              instruction: '',
-            },
-            response_mode: 'blocking',
-            user: 'ai-pisarz',
-          }),
-        });
+          'ai-pisarz'
+        );
 
-        if (!difyResponse.ok) {
-          const errorText = await difyResponse.text();
-          throw new Error(`Dify API error: ${difyResponse.status} - ${errorText}`);
-        }
-
-        const result = await difyResponse.json();
-
-        if (result.data?.status === 'succeeded') {
+        if (result?.data?.status === 'succeeded') {
           const generatedContent = result.data.outputs?.result || '';
+          totalTokens += sectionTokens || result.data.total_tokens || 0;
+          // Append section token details with section identifier
+          tokenDetails.forEach(td => {
+            allTokenDetails.push({
+              ...td,
+              node_title: `[Sekcja ${i + 1}] ${td.node_title}`,
+            });
+          });
 
           // Update section with generated content
           await supabase
@@ -218,7 +213,7 @@ export async function POST(request: NextRequest) {
             current_heading_index: i + 1,
           };
         } else {
-          throw new Error(result.data?.error || `Failed to generate section ${i}`);
+          throw new Error(result?.data?.error || `Failed to generate section ${i}`);
         }
       } catch (sectionError) {
         // Mark section as error but continue
@@ -277,12 +272,14 @@ export async function POST(request: NextRequest) {
       .update({ status: 'completed', current_stage: 5 })
       .eq('id', projectId);
 
-    // Complete workflow run
+    // Complete workflow run with detailed token info
     await supabase
       .from('pisarz_workflow_runs')
       .update({
         status: 'completed',
         completed_at: new Date().toISOString(),
+        total_tokens: totalTokens,
+        token_details: allTokenDetails,
       })
       .eq('id', run?.id);
 
@@ -292,6 +289,8 @@ export async function POST(request: NextRequest) {
       contentText: fullContentText,
       sectionsCompleted: completedSections?.length || 0,
       totalSections: sections.length,
+      totalTokens,
+      tokenDetails: allTokenDetails,
     });
   } catch (error) {
     console.error('Content workflow error:', error);

@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-
-const DIFY_API_BASE = process.env.DIFY_API_BASE_URL || 'https://api.dify.ai/v1';
-const DIFY_RAG_KEY = process.env.DIFY_RAG_WORKFLOW_KEY;
+import { getDifyClient } from '@/lib/dify/client';
 
 function getSupabase() {
   return createClient(
@@ -21,7 +19,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
     }
 
-    if (!DIFY_RAG_KEY) {
+    if (!process.env.DIFY_RAG_WORKFLOW_KEY) {
       return NextResponse.json({ error: 'Dify API key not configured' }, { status: 500 });
     }
 
@@ -82,32 +80,19 @@ export async function POST(request: NextRequest) {
       headings = headings.substring(0, MAX_HEADINGS_LENGTH);
     }
 
-    // Call Dify API
-    const difyResponse = await fetch(`${DIFY_API_BASE}/workflows/run`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${DIFY_RAG_KEY}`,
-        'Content-Type': 'application/json',
+    // Call Dify API with streaming to get detailed token info
+    const difyClient = getDifyClient();
+    const { result, tokenDetails, totalTokens } = await difyClient.runWorkflowStreaming(
+      'rag',
+      {
+        keyword: project.keyword,
+        language: project.language,
+        headings: headings,
       },
-      body: JSON.stringify({
-        inputs: {
-          keyword: project.keyword,
-          language: project.language,
-          headings: headings,
-        },
-        response_mode: 'blocking',
-        user: 'ai-pisarz',
-      }),
-    });
+      'ai-pisarz'
+    );
 
-    if (!difyResponse.ok) {
-      const errorText = await difyResponse.text();
-      throw new Error(`Dify API error: ${difyResponse.status} - ${errorText}`);
-    }
-
-    const result = await difyResponse.json();
-
-    if (result.data?.status === 'succeeded') {
+    if (result?.data?.status === 'succeeded') {
       const outputs = result.data.outputs || {};
 
       // Handle different output formats from Dify workflow
@@ -145,18 +130,20 @@ export async function POST(request: NextRequest) {
         .update({ status: 'rag_created', current_stage: 3 })
         .eq('id', projectId);
 
-      // Complete workflow run
+      // Complete workflow run with detailed token info
       await supabase
         .from('pisarz_workflow_runs')
         .update({
           status: 'completed',
           completed_at: new Date().toISOString(),
+          total_tokens: totalTokens || result.data.total_tokens || 0,
+          token_details: tokenDetails,
         })
         .eq('id', run?.id);
 
-      return NextResponse.json({ success: true, outputs });
+      return NextResponse.json({ success: true, outputs, tokenDetails });
     } else {
-      throw new Error(result.data?.error || 'Workflow failed');
+      throw new Error(result?.data?.error || 'Workflow failed');
     }
   } catch (error) {
     console.error('RAG workflow error:', error);

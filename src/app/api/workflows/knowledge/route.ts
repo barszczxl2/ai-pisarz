@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-
-const DIFY_API_BASE = process.env.DIFY_API_BASE_URL || 'https://api.dify.ai/v1';
-const DIFY_KNOWLEDGE_KEY = process.env.DIFY_KNOWLEDGE_WORKFLOW_KEY;
+import { getDifyClient } from '@/lib/dify/client';
 
 // Create Supabase client for API routes
 function getSupabase() {
@@ -22,7 +20,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
     }
 
-    if (!DIFY_KNOWLEDGE_KEY) {
+    if (!process.env.DIFY_KNOWLEDGE_WORKFLOW_KEY) {
       return NextResponse.json({ error: 'Dify API key not configured' }, { status: 500 });
     }
 
@@ -72,43 +70,33 @@ export async function POST(request: NextRequest) {
     // Prepare AIO value - default to "BRAK" if empty
     const aioValue = project.ai_overview_content?.trim() || 'BRAK';
 
-    // Call Dify API
-    const difyResponse = await fetch(`${DIFY_API_BASE}/workflows/run`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${DIFY_KNOWLEDGE_KEY}`,
-        'Content-Type': 'application/json',
+    // Call Dify API with streaming to get detailed token info
+    const difyClient = getDifyClient();
+    const { result, tokenDetails, totalTokens } = await difyClient.runWorkflowStreaming(
+      'knowledge',
+      {
+        keyword: project.keyword,
+        language: project.language || 'Polish',
+        aio: aioValue,
       },
-      body: JSON.stringify({
-        inputs: {
-          keyword: project.keyword,
-          language: project.language || 'Polish',
-          aio: aioValue,
-        },
-        response_mode: 'blocking',
-        user: 'ai-pisarz',
-      }),
-    });
+      'ai-pisarz'
+    );
 
-    if (!difyResponse.ok) {
-      const errorText = await difyResponse.text();
-      throw new Error(`Dify API error: ${difyResponse.status} - ${errorText}`);
-    }
-
-    const result = await difyResponse.json();
-
-    if (result.data?.status === 'succeeded') {
+    if (result?.data?.status === 'succeeded') {
       const outputs = result.data.outputs || {};
 
       // Save knowledge graph
       if (outputs.knowledge_graph) {
-        let graphData = outputs.knowledge_graph;
-        if (typeof graphData === 'string') {
+        let graphData: Record<string, unknown> = {};
+        const rawGraph = outputs.knowledge_graph;
+        if (typeof rawGraph === 'string') {
           try {
-            graphData = JSON.parse(graphData);
+            graphData = JSON.parse(rawGraph);
           } catch {
-            graphData = { raw: graphData };
+            graphData = { raw: rawGraph };
           }
+        } else {
+          graphData = rawGraph as Record<string, unknown>;
         }
         await supabase.from('pisarz_knowledge_graphs').insert({
           project_id: projectId,
@@ -117,17 +105,19 @@ export async function POST(request: NextRequest) {
       }
 
       // Save information graph (from "grafinformacji" output)
-      const infoGraphData = outputs.grafinformacji || outputs.information_graph;
-      if (infoGraphData) {
-        let parsedData = infoGraphData;
-        if (typeof parsedData === 'string') {
+      const rawInfoGraph = outputs.grafinformacji || outputs.information_graph;
+      if (rawInfoGraph) {
+        let parsedData: Record<string, unknown> = {};
+        if (typeof rawInfoGraph === 'string') {
           try {
             // Remove markdown code blocks if present
-            const cleaned = parsedData.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            const cleaned = rawInfoGraph.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
             parsedData = JSON.parse(cleaned);
           } catch {
-            parsedData = { raw: infoGraphData };
+            parsedData = { raw: rawInfoGraph };
           }
+        } else {
+          parsedData = rawInfoGraph as Record<string, unknown>;
         }
         await supabase.from('pisarz_information_graphs').insert({
           project_id: projectId,
@@ -159,12 +149,14 @@ export async function POST(request: NextRequest) {
         .update({ status: 'knowledge_built', current_stage: 1 })
         .eq('id', projectId);
 
-      // Complete workflow run
+      // Complete workflow run with detailed token info
       await supabase
         .from('pisarz_workflow_runs')
         .update({
           status: 'completed',
           completed_at: new Date().toISOString(),
+          total_tokens: totalTokens || result.data.total_tokens || 0,
+          token_details: tokenDetails,
         })
         .eq('id', run?.id);
 
@@ -172,15 +164,16 @@ export async function POST(request: NextRequest) {
         success: true,
         outputs: {
           knowledge_graph: outputs.knowledge_graph ? true : false,
-          information_graph: infoGraphData ? true : false,
+          information_graph: rawInfoGraph ? true : false,
           search_phrases: phrasesData ? true : false,
           competitor_headers: headersData ? true : false,
         },
-        tokens: result.data.total_tokens,
+        tokens: totalTokens || result.data.total_tokens,
+        tokenDetails,
         elapsed_time: result.data.elapsed_time,
       });
     } else {
-      throw new Error(result.data?.error || 'Workflow failed');
+      throw new Error(result?.data?.error || 'Workflow failed');
     }
   } catch (error) {
     console.error('Knowledge workflow error:', error);

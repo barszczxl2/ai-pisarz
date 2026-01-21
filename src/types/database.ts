@@ -109,6 +109,17 @@ export interface ContextStore {
   updated_at: string;
 }
 
+export interface TokenDetail {
+  node_id: string;
+  node_type: string;
+  node_title: string;
+  total_tokens: number;
+  model_name?: string;
+  model_provider?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+}
+
 export interface WorkflowRun {
   id: string;
   project_id: string;
@@ -118,6 +129,8 @@ export interface WorkflowRun {
   error_message: string | null;
   started_at: string;
   completed_at: string | null;
+  total_tokens?: number;
+  token_details?: TokenDetail[];
 }
 
 // Extended types with relations
