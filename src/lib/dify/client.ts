@@ -205,9 +205,12 @@ export interface ContentWorkflowInputs {
   knowledge: string;
   keywords: string;
   headings: string; // all headings for context
-  done: string; // accumulated content
+  done: string; // accumulated content (summaries of previous sections)
   keyword: string; // main keyword
   instruction?: string;
+  // Nowe pola dla kontekstu
+  last_section?: string; // pełna treść ostatniej sekcji (dla ciągłości)
+  upcoming?: string; // plan przyszłych sekcji z brief
 }
 
 // Helper functions for running specific workflows

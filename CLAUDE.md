@@ -175,24 +175,54 @@ interface BriefItem {
 **Klucz:** `DIFY_CONTENT_WORKFLOW_KEY`
 **Endpoint:** `POST /api/workflows/content`
 
-Wywoływany **dla każdej sekcji osobno** z akumulacją treści.
+Wywoływany **dla każdej sekcji osobno** z systemem anty-powtórzeniowym.
 
 | Wejście (inputs) | Źródło | Wymagane |
 |------------------|--------|----------|
 | `naglowek` | aktualny nagłówek HTML | tak |
 | `language` | projekt.language | tak |
 | `knowledge` | briefItem.knowledge | tak |
-| `keywords` | pisarz_search_phrases.phrases | tak |
-| `headings` | wszystkie nagłówki (kontekst) | tak |
-| `done` | accumulated_content (poprzednia treść) | tak |
+| `keywords` | briefItem.keywords | tak |
+| `headings` | wszystkie nagłówki (kontekst struktury) | tak |
+| `done` | **streszczenia poprzednich sekcji** (2-3 zdania każda) | tak |
 | `keyword` | projekt.keyword | tak |
-| `instruction` | dodatkowe instrukcje | nie |
+| `last_section` | pełna treść ostatniej sekcji (dla ciągłości) | nie |
+| `upcoming` | plan przyszłych sekcji z brief (temat każdej) | nie |
+| `instruction` | **instrukcja anty-powtórzeniowa** (auto-generowana) | nie |
 
 | Wyjście (outputs) | Tabela docelowa |
 |-------------------|-----------------|
 | `result` | pisarz_content_sections.content_html |
 
-**Context Store:** `pisarz_context_store` przechowuje `accumulated_content` i `current_heading_index`
+**Context Store:** `pisarz_context_store` przechowuje:
+- `accumulated_content` - pełna treść (backup)
+- `current_heading_index` - indeks aktualnej sekcji
+- `section_summaries` - JSON array streszczeń `[{heading, summary, topics}]`
+- `last_section_content` - pełna treść ostatniej sekcji
+
+**System anty-powtórzeniowy:**
+
+Model przy każdej sekcji otrzymuje:
+1. **Streszczenia poprzednich sekcji** (zamiast pełnej treści) - oszczędność tokenów
+2. **Pełną ostatnią sekcję** - dla zachowania ciągłości stylu
+3. **Plan przyszłych sekcji** - wie co będzie pisane później
+4. **Instrukcję anty-powtórzeniową** - lista tematów do unikania
+
+```
+Przykład instrukcji:
+WAŻNE ZASADY:
+1. NIE powtarzaj informacji z poprzednich sekcji.
+2. NIE pisz o tematach zaplanowanych na kolejne sekcje.
+3. Skup się TYLKO na aktualnym nagłówku.
+
+Tematy już omówione (NIE powtarzaj): Wprowadzenie, Historia
+Tematy na kolejne sekcje (NIE pisz o nich teraz): Przyszłość, Podsumowanie
+```
+
+**Pliki implementacji:**
+- `src/lib/summarizer.ts` - funkcje streszczania i budowania kontekstu
+- `src/app/api/workflows/content/route.ts` - API endpoint
+- `src/lib/orchestrator/index.ts` - logika orkiestracji
 
 ---
 
@@ -234,6 +264,10 @@ pisarz_content_sections
 
 pisarz_context_store
 ├── project_id, accumulated_content, current_heading_index
+├── section_summaries (JSONB), last_section_content
+
+pisarz_content_sections
+├── ... + summary (TEXT) - streszczenie sekcji
 
 pisarz_generated_content
 ├── id, project_id, content_html, content_text

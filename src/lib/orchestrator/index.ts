@@ -13,6 +13,13 @@ import {
   type BriefWorkflowInputs,
   type ContentWorkflowInputs,
 } from '@/lib/dify/client';
+import {
+  processSectionForContext,
+  buildPreviousSectionsContext,
+  buildUpcomingSectionsContext,
+  buildAntiRepetitionInstruction,
+  SectionSummary,
+} from '@/lib/summarizer';
 import type { BriefItem, ContentSection, ProjectStatus } from '@/types/database';
 
 export class Orchestrator {
@@ -341,11 +348,13 @@ export class Orchestrator {
           await this.supabase.from('pisarz_content_sections').insert(sections);
         }
 
-        // Initialize context store
+        // Initialize context store with summaries support
         await this.supabase.from('pisarz_context_store').upsert({
           project_id: projectId,
           accumulated_content: '',
           current_heading_index: 0,
+          section_summaries: [],
+          last_section_content: '',
         });
 
         await this.completeWorkflowRun(run!.id, 'completed');
@@ -411,6 +420,8 @@ export class Orchestrator {
             project_id: projectId,
             accumulated_content: '',
             current_heading_index: 0,
+            section_summaries: [],
+            last_section_content: '',
           })
           .select()
           .single();
@@ -418,6 +429,13 @@ export class Orchestrator {
       }
 
       const startIndex = contextStore?.current_heading_index || 0;
+      const briefItems = (brief.brief_json as BriefItem[]) || [];
+
+      // Parse section_summaries if it's a string
+      const sectionSummaries: SectionSummary[] =
+        typeof contextStore?.section_summaries === 'string'
+          ? JSON.parse(contextStore.section_summaries)
+          : (contextStore?.section_summaries || []);
 
       // Iterate through sections
       for (let i = startIndex; i < sections.length; i++) {
@@ -429,7 +447,24 @@ export class Orchestrator {
           .update({ status: 'processing' })
           .eq('id', section.id);
 
-        const briefItem = brief.brief_json?.[i] as BriefItem | undefined;
+        const briefItem = briefItems[i];
+
+        // Build context for this section
+        const previousContext = buildPreviousSectionsContext(
+          sectionSummaries.map(s => ({ heading: s.heading, summary: s.summary }))
+        );
+        const upcomingContext = buildUpcomingSectionsContext(briefItems, i);
+
+        // Get topics from previous and upcoming sections for anti-repetition
+        const previousTopics = sectionSummaries.flatMap(s => s.topics);
+        const upcomingTopics = briefItems.slice(i + 1).map(b =>
+          b.heading.replace(/<[^>]+>/g, '').trim()
+        );
+
+        const antiRepetitionInstruction = buildAntiRepetitionInstruction(
+          previousTopics,
+          upcomingTopics
+        );
 
         const inputs: ContentWorkflowInputs = {
           naglowek: section.heading_html,
@@ -437,8 +472,15 @@ export class Orchestrator {
           knowledge: briefItem?.knowledge || section.heading_knowledge || '',
           keywords: briefItem?.keywords || section.heading_keywords || '',
           headings: selectedHeaders.headers_html || '',
-          done: contextStore?.accumulated_content || '',
+          // ZMIANA: zamiast pełnej treści, przekazujemy streszczenia
+          done: previousContext,
           keyword: project.keyword,
+          // NOWE: pełna treść ostatniej sekcji dla ciągłości
+          last_section: contextStore?.last_section_content || '',
+          // NOWE: plan przyszłych sekcji
+          upcoming: upcomingContext,
+          // NOWE: instrukcja anty-powtórzeniowa
+          instruction: antiRepetitionInstruction,
         };
 
         const result = await runContentWorkflow(inputs);
@@ -446,16 +488,26 @@ export class Orchestrator {
         if (result.data.status === 'succeeded') {
           const generatedContent = result.data.outputs.result || '';
 
-          // Update section with generated content
+          // Generate summary for this section
+          const sectionSummary = processSectionForContext(
+            section.heading_html,
+            generatedContent
+          );
+
+          // Update section with generated content and summary
           await this.supabase
             .from('pisarz_content_sections')
             .update({
               content_html: generatedContent,
+              summary: sectionSummary.summary,
               status: 'completed',
             })
             .eq('id', section.id);
 
-          // Update context store
+          // Update summaries array
+          sectionSummaries.push(sectionSummary);
+
+          // Update context store with summaries
           const newAccumulatedContent = (contextStore?.accumulated_content || '') +
             `\n\n${section.heading_html}\n${generatedContent}`;
 
@@ -464,6 +516,8 @@ export class Orchestrator {
             .update({
               accumulated_content: newAccumulatedContent,
               current_heading_index: i + 1,
+              section_summaries: sectionSummaries,
+              last_section_content: `${section.heading_html}\n${generatedContent}`,
             })
             .eq('project_id', projectId);
 
@@ -472,6 +526,8 @@ export class Orchestrator {
             ...contextStore!,
             accumulated_content: newAccumulatedContent,
             current_heading_index: i + 1,
+            section_summaries: sectionSummaries,
+            last_section_content: `${section.heading_html}\n${generatedContent}`,
           };
 
           // Callback for real-time updates

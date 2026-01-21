@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import {
+  processSectionForContext,
+  buildPreviousSectionsContext,
+  buildUpcomingSectionsContext,
+  buildAntiRepetitionInstruction,
+  SectionSummary,
+} from '@/lib/summarizer';
 
 const DIFY_API_BASE = process.env.DIFY_API_BASE_URL || 'https://api.dify.ai/v1';
 const DIFY_CONTENT_KEY = process.env.DIFY_CONTENT_WORKFLOW_KEY;
@@ -15,6 +22,14 @@ interface BriefItem {
   heading: string;
   knowledge: string;
   keywords: string;
+}
+
+interface ContextStore {
+  project_id: string;
+  accumulated_content: string;
+  current_heading_index: number;
+  section_summaries: SectionSummary[];
+  last_section_content: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -111,11 +126,19 @@ export async function POST(request: NextRequest) {
           project_id: projectId,
           accumulated_content: '',
           current_heading_index: 0,
+          section_summaries: [],
+          last_section_content: '',
         })
         .select()
         .single();
       contextStore = newContext;
     }
+
+    // Parse section_summaries if it's a string
+    const sectionSummaries: SectionSummary[] =
+      typeof contextStore?.section_summaries === 'string'
+        ? JSON.parse(contextStore.section_summaries)
+        : (contextStore?.section_summaries || []);
 
     const startIndex = contextStore?.current_heading_index || 0;
     const briefItems = (brief.brief_json as BriefItem[]) || [];
@@ -132,6 +155,23 @@ export async function POST(request: NextRequest) {
         .eq('id', section.id);
 
       try {
+        // Build context for this section
+        const previousContext = buildPreviousSectionsContext(
+          sectionSummaries.map(s => ({ heading: s.heading, summary: s.summary }))
+        );
+        const upcomingContext = buildUpcomingSectionsContext(briefItems, i);
+
+        // Get topics from previous and upcoming sections for anti-repetition
+        const previousTopics = sectionSummaries.flatMap(s => s.topics);
+        const upcomingTopics = briefItems.slice(i + 1).map(b =>
+          b.heading.replace(/<[^>]+>/g, '').trim()
+        );
+
+        const antiRepetitionInstruction = buildAntiRepetitionInstruction(
+          previousTopics,
+          upcomingTopics
+        );
+
         // Call Dify API for this section
         const difyResponse = await fetch(`${DIFY_API_BASE}/workflows/run`, {
           method: 'POST',
@@ -146,9 +186,15 @@ export async function POST(request: NextRequest) {
               knowledge: briefItem?.knowledge || section.heading_knowledge || '',
               keywords: briefItem?.keywords || section.heading_keywords || '',
               headings: selectedHeaders.headers_html || '',
-              done: contextStore?.accumulated_content || '',
+              // ZMIANA: zamiast pełnej treści, przekazujemy streszczenia
+              done: previousContext,
               keyword: project.keyword,
-              instruction: '',
+              // NOWE: pełna treść ostatniej sekcji dla ciągłości
+              last_section: contextStore?.last_section_content || '',
+              // NOWE: plan przyszłych sekcji
+              upcoming: upcomingContext,
+              // NOWE: instrukcja anty-powtórzeniowa
+              instruction: antiRepetitionInstruction,
             },
             response_mode: 'blocking',
             user: 'ai-pisarz',
@@ -165,16 +211,26 @@ export async function POST(request: NextRequest) {
         if (result.data?.status === 'succeeded') {
           const generatedContent = result.data.outputs?.result || '';
 
-          // Update section with generated content
+          // Generate summary for this section
+          const sectionSummary = processSectionForContext(
+            section.heading_html,
+            generatedContent
+          );
+
+          // Update section with generated content and summary
           await supabase
             .from('pisarz_content_sections')
             .update({
               content_html: generatedContent,
+              summary: sectionSummary.summary,
               status: 'completed',
             })
             .eq('id', section.id);
 
-          // Update context store
+          // Update summaries array
+          sectionSummaries.push(sectionSummary);
+
+          // Update context store with summaries instead of full content
           const newAccumulatedContent =
             (contextStore?.accumulated_content || '') +
             `\n\n${section.heading_html}\n${generatedContent}`;
@@ -184,6 +240,8 @@ export async function POST(request: NextRequest) {
             .update({
               accumulated_content: newAccumulatedContent,
               current_heading_index: i + 1,
+              section_summaries: sectionSummaries,
+              last_section_content: `${section.heading_html}\n${generatedContent}`,
             })
             .eq('project_id', projectId);
 
@@ -192,6 +250,8 @@ export async function POST(request: NextRequest) {
             ...contextStore!,
             accumulated_content: newAccumulatedContent,
             current_heading_index: i + 1,
+            section_summaries: sectionSummaries,
+            last_section_content: `${section.heading_html}\n${generatedContent}`,
           };
         } else {
           throw new Error(result.data?.error || `Failed to generate section ${i}`);

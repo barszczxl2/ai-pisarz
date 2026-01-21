@@ -412,7 +412,22 @@ export default function ProjectDetailPage() {
       }
 
       if (data?.content_html) {
-        await navigator.clipboard.writeText(data.content_html);
+        // Try modern clipboard API first, fallback to legacy method for HTTP
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(data.content_html);
+        } else {
+          // Fallback for HTTP (non-secure context)
+          const textArea = document.createElement('textarea');
+          textArea.value = data.content_html;
+          textArea.style.position = 'fixed';
+          textArea.style.left = '-999999px';
+          textArea.style.top = '-999999px';
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          document.execCommand('copy');
+          textArea.remove();
+        }
         toast.success('Skopiowano do schowka');
       } else {
         toast.error('Brak treści do skopiowania');
