@@ -138,14 +138,36 @@ export async function POST(request: NextRequest) {
     if (result.data?.status === 'succeeded') {
       const outputs = result.data.outputs || {};
 
+      // Debug: log FULL Dify response
+      console.log('=== DIFY BRIEF FULL RESPONSE ===');
+      console.log('result.data keys:', Object.keys(result.data));
+      console.log('outputs keys:', Object.keys(outputs));
+      console.log('outputs FULL:', JSON.stringify(outputs, null, 2).substring(0, 2000));
+      console.log('outputs.brief type:', typeof outputs.brief);
+      console.log('outputs.brief value:', outputs.brief ? String(outputs.brief).substring(0, 1000) : 'EMPTY/NULL/UNDEFINED');
+      console.log('outputs.html type:', typeof outputs.html);
+      console.log('=== END DIFY DEBUG ===');
+
       // Parse brief JSON
       let briefJson: BriefItem[] | null = null;
       if (outputs.brief) {
         try {
-          briefJson = JSON.parse(outputs.brief);
-        } catch {
+          // Clean potential markdown code blocks
+          let briefStr = String(outputs.brief).trim();
+          if (briefStr.startsWith('```json')) {
+            briefStr = briefStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+          } else if (briefStr.startsWith('```')) {
+            briefStr = briefStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
+          }
+          console.log('Brief string after cleanup (first 500 chars):', briefStr.substring(0, 500));
+          briefJson = JSON.parse(briefStr);
+        } catch (e) {
+          console.error('Failed to parse brief JSON:', e);
+          console.error('Raw brief value:', String(outputs.brief).substring(0, 500));
           briefJson = null;
         }
+      } else {
+        console.error('outputs.brief is FALSY - nothing to parse');
       }
 
       // Save brief
@@ -156,7 +178,8 @@ export async function POST(request: NextRequest) {
       });
 
       // Create content sections from brief
-      if (briefJson && Array.isArray(briefJson)) {
+      console.log('Brief JSON parsed:', { briefJson: !!briefJson, isArray: Array.isArray(briefJson), length: briefJson?.length });
+      if (briefJson && Array.isArray(briefJson) && briefJson.length > 0) {
         const sections = briefJson.map((item, index) => ({
           project_id: projectId,
           section_order: index,
@@ -166,7 +189,13 @@ export async function POST(request: NextRequest) {
           status: 'pending' as const,
         }));
 
-        await supabase.from('pisarz_content_sections').insert(sections);
+        console.log('Creating sections:', sections.length);
+        const { error: sectionsError } = await supabase.from('pisarz_content_sections').insert(sections);
+        if (sectionsError) {
+          console.error('Error creating sections:', sectionsError);
+        }
+      } else {
+        console.error('Brief JSON invalid - cannot create sections');
       }
 
       // Initialize context store
