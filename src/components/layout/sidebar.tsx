@@ -9,6 +9,8 @@ import {
   Plus,
   Settings,
   FileText,
+  Database,
+  Dices,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -23,6 +25,16 @@ const navigation = [
     name: 'Projekty',
     href: '/projects',
     icon: FolderKanban,
+  },
+  {
+    name: 'Baza DING',
+    href: '/baza-ding',
+    icon: Database,
+  },
+  {
+    name: 'Monte Carlo',
+    href: '/monte-carlo',
+    icon: Dices,
   },
 ];
 
