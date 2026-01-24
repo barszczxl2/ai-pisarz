@@ -33,6 +33,12 @@ function getBreadcrumbs(pathname: string) {
       case 'monte-carlo':
         name = 'Monte Carlo';
         break;
+      case 'trends':
+        name = 'Google Trends';
+        break;
+      case 'semantyka':
+        name = 'Wyszukiwanie semantyczne';
+        break;
       default:
         // Keep UUIDs as is or shorten them
         if (path.length > 20) {
@@ -56,6 +62,8 @@ function getPageTitle(pathname: string): string {
   if (pathname === '/settings') return 'Ustawienia';
   if (pathname === '/baza-ding') return 'Baza DING';
   if (pathname === '/monte-carlo') return 'Analiza Monte Carlo';
+  if (pathname === '/trends') return 'Google Trends';
+  if (pathname === '/semantyka') return 'Wyszukiwanie semantyczne';
   if (pathname.includes('/projects/') && pathname.includes('/content')) {
     return 'Treść Artykułu';
   }

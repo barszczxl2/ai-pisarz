@@ -271,7 +271,46 @@ pisarz_content_sections
 
 pisarz_generated_content
 ├── id, project_id, content_html, content_text
+
+rrs_google_trends (zewnętrzna tabela z trendami Google)
+├── id (integer, PK)
+├── trend_id (text) - unikalny identyfikator trendu
+├── keyword (text) - słowo kluczowe trendu
+├── approx_traffic (integer) - przybliżony ruch w tysiącach (np. 100 = 100K)
+├── pub_date (timestamptz) - data publikacji trendu
+├── description (text) - opis trendu
+├── media (text) - lista źródeł mediów, format: "Media1 - Media2 - Media3"
+├── media_links (text) - linki do artykułów, format multi-line (patrz niżej)
+├── picture (text) - URL obrazka
+├── picture_source (text) - źródło obrazka
+├── has_interia (boolean) - czy Interia ma artykuł o tym trendzie
+├── fetched_at (timestamptz) - data pobrania
+├── created_at (timestamptz) - data utworzenia
+├── embedding (vector) - embedding pgvector
+├── embedding_text (text) - tekst użyty do embeddingu
 ```
+
+### Format pola `media_links` (rrs_google_trends)
+
+Pole `media_links` zawiera linki do artykułów w formacie multi-line string:
+
+```
+- tytuł: Tytuł pierwszego artykułu
+ - Link: https://example.com/article1
+
+- tytuł: Tytuł drugiego artykułu
+ - Link: https://example.com/article2
+
+- tytuł: Tytuł trzeciego artykułu
+ - Link: https://example.com/article3
+```
+
+**Parsowanie w kodzie (`src/app/(dashboard)/trends/page.tsx`):**
+1. Rozdziel wpisy po podwójnej nowej linii (`\n\n`)
+2. Dla każdego wpisu znajdź tytuł regex: `/-\s*tytuł:\s*(.+)/i`
+3. Znajdź URL regex: `/-\s*Link:\s*(https?:\/\/[^\s]+)/i`
+
+**Liczba linków:** Zależy od tego ile mediów pisało o danym trendzie (zazwyczaj 1-5).
 
 ---
 
@@ -284,6 +323,8 @@ pisarz_generated_content
 | `src/app/api/workflows/*/route.ts` | API routes dla workflow'ów |
 | `src/app/(dashboard)/projects/[id]/page.tsx` | Strona projektu |
 | `src/app/(dashboard)/settings/workflows/page.tsx` | Konfiguracja workflow'ów |
+| `src/app/(dashboard)/trends/page.tsx` | Google Trends - wyświetlanie trendów z tabeli rrs_google_trends |
+| `src/types/database.ts` | Typy TypeScript dla tabel (Project, GoogleTrend, itp.) |
 
 ---
 

@@ -2,6 +2,23 @@
 
 export type ProjectStatus = 'draft' | 'knowledge_building' | 'knowledge_built' | 'headers_generated' | 'headers_selected' | 'rag_created' | 'brief_created' | 'content_generating' | 'completed' | 'error';
 
+// Google Trends types
+export interface GoogleTrend {
+  id: number;
+  trend_id: string;
+  keyword: string;
+  approx_traffic: number | null;
+  pub_date: string;
+  description: string | null;
+  media: string | null;
+  media_links: string | null;
+  picture: string | null;
+  picture_source: string | null;
+  has_interia: boolean;
+  fetched_at: string;
+  created_at: string;
+}
+
 export type WorkflowStatus = 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
 
 export type HeaderType = 'rozbudowane' | 'h2' | 'pytania';
