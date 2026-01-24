@@ -19,6 +19,50 @@ export interface GoogleTrend {
   created_at: string;
 }
 
+// Extended GoogleTrend with embedding data
+export interface GoogleTrendWithEmbedding extends GoogleTrend {
+  embedding: string | null;  // pgvector format: "[-0.07, 0.04, ...]"
+  embedding_text: string | null;
+}
+
+// Semantic search result
+export interface SemanticCluster {
+  id: number;
+  keyword: string;
+  approx_traffic: number | null;
+  description: string | null;
+  has_interia: boolean;
+  similarity: number;
+}
+
+// Graph visualization types
+export interface ClusterNode {
+  id: string;
+  keyword: string;
+  traffic: number;
+  cluster: number;
+  hasInteria: boolean;
+  description: string | null;
+  // Extended fields for TrendDetailsModal
+  pubDate?: string;
+  media?: string | null;
+  mediaLinks?: string | null;
+  picture?: string | null;
+  embeddingText?: string | null;
+  trendId?: string;
+}
+
+export interface ClusterLink {
+  source: string;
+  target: string;
+  similarity: number;
+}
+
+export interface GraphData {
+  nodes: ClusterNode[];
+  links: ClusterLink[];
+}
+
 export type WorkflowStatus = 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
 
 export type HeaderType = 'rozbudowane' | 'h2' | 'pytania';
