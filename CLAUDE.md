@@ -10,7 +10,8 @@ AI Pisarz to aplikacja Next.js do automatycznego generowania treści SEO. Wykorz
 - **Backend:** Next.js API Routes
 - **Baza danych:** Supabase (self-hosted na Hetzner)
 - **AI Workflows:** Dify (self-hosted, port 80)
-- **API zewnętrzne:** SerpData.io (wyszukiwanie SERP)
+- **API zewnętrzne:** SerpData.io (wyszukiwanie SERP), Jina AI (embeddings & web scraping)
+- **Wizualizacja:** react-force-graph-2d (interaktywne grafy)
 
 ## Konfiguracja (.env.local)
 
@@ -31,7 +32,213 @@ DIFY_CONTENT_WORKFLOW_KEY=app-xxx
 # SerpData
 SERPDATA_API_KEY=xxx
 SERPDATA_BASE_URL=https://api.serpdata.io/v1
+
+# Jina AI (Embeddings dla wyszukiwania semantycznego)
+JINA_API_KEY=jina_...
+
+# Ollama Cloud (Vision API dla OCR gazetek)
+OLLAMA_API_URL=https://ollama.com/v1
+OLLAMA_API_KEY=xxx
+OLLAMA_VISION_MODEL=qwen3-vl:235b-instruct
 ```
+
+---
+
+## Wyszukiwanie Semantyczne (/semantyka)
+
+Strona `/semantyka` oferuje interaktywny graf klastrów tematycznych dla trendów Google z embeddingami.
+
+### Funkcjonalności:
+- **Interaktywny graf klastrów** - wizualizacja powiązań między trendami na podstawie podobieństwa semantycznego (react-force-graph-2d)
+- **Wyszukiwarka semantyczna** - wyszukiwanie trendów podobnych do zapytania użytkownika (wymaga OPENAI_API_KEY)
+- **Klasteryzacja** - automatyczne grupowanie trendów w klastry na podstawie cosine similarity
+- **Filtry** - filtrowanie po traffic, obecności w Interia, progu podobieństwa
+- **Supabase Realtime** - automatyczne odświeżanie grafu po zmianach w bazie
+
+### Pliki:
+| Plik | Opis |
+|------|------|
+| `src/app/(dashboard)/semantyka/page.tsx` | Główna strona z grafem i filtrami |
+| `src/components/semantic/ClusterGraph.tsx` | Komponent interaktywnego grafu (react-force-graph-2d) |
+| `src/components/semantic/ClusterDetails.tsx` | Panel szczegółów klastra |
+| `src/components/semantic/SemanticSearch.tsx` | Komponent wyszukiwarki semantycznej |
+| `src/lib/clustering.ts` | Funkcje klasteryzacji i similarity |
+| `src/app/api/semantic-search/route.ts` | API endpoint do wyszukiwania semantycznego |
+
+### Algorytm klasteryzacji:
+1. Parsowanie embeddingów z formatu pgvector (string `[...]`)
+2. Obliczanie cosine similarity między wszystkimi parami trendów
+3. Tworzenie krawędzi dla par z similarity > threshold (domyślnie 0.7)
+4. Union-Find do wykrywania connected components (klastrów)
+
+### Wymagania:
+- Trendy muszą mieć wypełnione kolumny `embedding` i `embedding_text` w tabeli `rrs_google_trends`
+- Wyszukiwarka semantyczna wymaga klucza `JINA_API_KEY` (model: jina-embeddings-v3)
+- Graf klastrów działa bez API key - używa istniejących embeddingów z bazy
+
+---
+
+## Wyszukiwarka Gazetek Promocyjnych (/gazetki)
+
+Strona `/gazetki` oferuje semantyczne wyszukiwanie promocji z gazetek sklepowych (Blix).
+
+### Funkcjonalności:
+- **Wyszukiwarka semantyczna** - znajdowanie promocji na podstawie opisu w języku naturalnym
+- **Wyniki z podobieństwem** - każdy wynik pokazuje % dopasowania semantycznego
+- **Linki do gazetek** - bezpośrednie linki do źródłowych gazetek na Blix.pl
+- **Statystyki** - liczba gazetek, embeddingów, unikalnych sklepów
+
+### Pliki:
+| Plik | Opis |
+|------|------|
+| `src/app/(dashboard)/gazetki/page.tsx` | Strona wyszukiwarki gazetek |
+| `src/app/api/product-search/route.ts` | API endpoint do wyszukiwania produktów |
+
+### Tabela bazy danych: `rrs_blix_gazetki`
+
+```sql
+id              | serial (PK)
+item_id         | text (unique) - identyfikator gazetki
+title           | text - tytuł gazetki (np. "Gazetka Biedronka - Od poniedziałku")
+description     | text - opis z listą promocji
+link            | text - URL do gazetki na Blix.pl
+pub_date        | timestamptz - data publikacji
+context_query   | text - przykładowe zapytania pasujące do tej gazetki
+embedding       | vector(1024) - embedding Jina AI
+embedding_text  | text - tekst użyty do embeddingu (context_query + description)
+fetched_at      | timestamptz
+created_at      | timestamptz
+```
+
+### Embeddingi:
+- Model: `jina-embeddings-v3`
+- Wymiary: 1024
+- Task (storage): `retrieval.passage`
+- Task (query): `retrieval.query`
+- Index: HNSW z `vector_cosine_ops`
+
+### Przykładowe zapytania:
+- "promocje na mleko"
+- "tanie owoce i warzywa"
+- "kosmetyki w Lidlu"
+- "zabawki dla dzieci"
+
+---
+
+## OCR Gazetek (Vision API)
+
+Funkcjonalność wyciągania produktów i cen z obrazów gazetek promocyjnych przy użyciu Ollama Cloud Vision API.
+
+### Architektura:
+```
+Obraz strony gazetki (URL)
+       ↓
+[1] POST /api/ocr-gazetka
+       ↓
+[2] Ollama Cloud Vision API (mistral-large-3)
+       ↓
+[3] Parsowanie JSON z produktami
+       ↓
+[4] (opcjonalnie) Zapis do rrs_blix_products z embeddingiem Jina AI
+```
+
+### Konfiguracja (.env.local):
+```env
+# Ollama Cloud (Turbo $20/mies)
+OLLAMA_API_URL=https://ollama.com/v1
+OLLAMA_API_KEY=xxx
+OLLAMA_VISION_MODEL=qwen3-vl:235b-instruct  # Najlepsza dokładność OCR
+```
+
+### Funkcjonalności UI:
+- **Automatyczne wykrycie URL Blix** - wklej link do gazetki, system pobierze obrazy
+- **Wybór strony** - selektor numeru strony z informacją o łącznej liczbie stron
+- **Nawigacja w modalu** - strzałki ← → do przeskakiwania między stronami
+- **Tabela wyników** - produkty z cenami, markami, rabatami i kategoriami
+
+### Pliki:
+| Plik | Opis |
+|------|------|
+| `src/lib/ollama/client.ts` | Klient Ollama Vision API |
+| `src/app/api/ocr-gazetka/route.ts` | API endpoint do OCR |
+| `src/app/(dashboard)/gazetki/page.tsx` | UI z przyciskiem "Skanuj gazetke" |
+| `supabase/migrations/20260125_create_rrs_blix_products.sql` | Migracja tabeli produktów |
+
+### API Endpoint: `/api/ocr-gazetka`
+
+**POST** - Analizuje obraz gazetki i wyciąga produkty
+
+```typescript
+// Request
+{
+  imageUrl: string;           // URL gazetki Blix.pl lub obrazka
+  gazetkaId?: number;         // ID z rrs_blix_gazetki (opcjonalne)
+  pageNumber?: number;        // Numer strony gazetki (domyślnie: 1)
+  saveToDatabase?: boolean;   // Zapisz do rrs_blix_products (domyślnie: false)
+}
+
+// Response
+{
+  success: boolean;
+  products: OCRExtractedProduct[];
+  productCount: number;
+  pageNumber: number;
+  totalPages?: number;        // Łączna liczba stron (gdy URL to gazetka Blix)
+  processingTimeMs?: number;
+  savedToDatabase: boolean;
+  savedCount?: number;
+  saveError?: string;
+}
+
+// OCRExtractedProduct
+{
+  name: string;
+  brand?: string | null;
+  price: number | null;
+  original_price?: number | null;
+  discount_percent?: number | null;
+  unit?: string | null;      // "1L", "500g", "1szt"
+  category?: string | null;  // nabial, mieso, pieczywo, etc.
+  confidence?: number;
+}
+```
+
+**GET** - Sprawdza konfigurację OCR
+
+### Tabela bazy danych: `rrs_blix_products`
+
+```sql
+id               | serial (PK)
+gazetka_id       | integer FK -> rrs_blix_gazetki(id)
+page_number      | integer
+product_name     | text NOT NULL
+brand            | text
+price            | decimal(10,2)
+original_price   | decimal(10,2) - cena przed promocją
+discount_percent | integer
+unit             | text - jednostka (kg, szt, l)
+category         | text - kategoria produktu
+image_url        | text - URL obrazka produktu
+ocr_confidence   | float - pewność OCR (0-1)
+embedding        | vector(1024) - Jina AI embedding
+embedding_text   | text - tekst użyty do embeddingu
+created_at       | timestamptz
+```
+
+### Kategorie produktów:
+- `nabial` - Nabiał
+- `mieso` - Mięso
+- `pieczywo` - Pieczywo
+- `owoce_warzywa` - Owoce i warzywa
+- `napoje` - Napoje
+- `slodycze` - Słodycze
+- `chemia` - Chemia
+- `kosmetyki` - Kosmetyki
+- `inne` - Inne
+
+### Koszty:
+- Ollama Cloud Turbo: $20/mies. (flat rate z limitami)
+- Jina embedding (per produkt): ~$0.0001
 
 ---
 
@@ -288,6 +495,36 @@ rrs_google_trends (zewnętrzna tabela z trendami Google)
 ├── created_at (timestamptz) - data utworzenia
 ├── embedding (vector) - embedding pgvector
 ├── embedding_text (text) - tekst użyty do embeddingu
+
+rrs_blix_gazetki (zewnętrzna tabela z gazetkami promocyjnymi)
+├── id (serial, PK)
+├── item_id (text, unique) - unikalny identyfikator gazetki
+├── title (text) - tytuł gazetki (np. "Gazetka Biedronka - Od poniedziałku")
+├── description (text) - opis z listą promocji
+├── link (text) - URL do gazetki na Blix.pl
+├── pub_date (timestamptz) - data publikacji
+├── context_query (text) - przykładowe zapytania pasujące do tej gazetki
+├── embedding (vector(1024)) - embedding Jina AI (retrieval.passage)
+├── embedding_text (text) - tekst użyty do embeddingu
+├── fetched_at (timestamptz) - data pobrania
+├── created_at (timestamptz) - data utworzenia
+
+rrs_blix_products (produkty z OCR gazetek)
+├── id (serial, PK)
+├── gazetka_id (integer, FK) - referencja do rrs_blix_gazetki
+├── page_number (integer) - numer strony gazetki
+├── product_name (text) - nazwa produktu
+├── brand (text) - marka produktu
+├── price (decimal) - cena promocyjna
+├── original_price (decimal) - cena przed promocją
+├── discount_percent (integer) - procent rabatu
+├── unit (text) - jednostka (kg, szt, l)
+├── category (text) - kategoria produktu
+├── image_url (text) - URL obrazka produktu
+├── ocr_confidence (float) - pewność rozpoznania OCR
+├── embedding (vector(1024)) - embedding Jina AI
+├── embedding_text (text) - tekst użyty do embeddingu
+├── created_at (timestamptz)
 ```
 
 ### Format pola `media_links` (rrs_google_trends)
@@ -324,7 +561,14 @@ Pole `media_links` zawiera linki do artykułów w formacie multi-line string:
 | `src/app/(dashboard)/projects/[id]/page.tsx` | Strona projektu |
 | `src/app/(dashboard)/settings/workflows/page.tsx` | Konfiguracja workflow'ów |
 | `src/app/(dashboard)/trends/page.tsx` | Google Trends - wyświetlanie trendów z tabeli rrs_google_trends |
-| `src/types/database.ts` | Typy TypeScript dla tabel (Project, GoogleTrend, itp.) |
+| `src/app/(dashboard)/semantyka/page.tsx` | Wyszukiwanie semantyczne - interaktywny graf klastrów |
+| `src/app/(dashboard)/gazetki/page.tsx` | Wyszukiwarka gazetek promocyjnych + OCR |
+| `src/app/api/product-search/route.ts` | API endpoint do wyszukiwania produktów w gazetkach |
+| `src/app/api/ocr-gazetka/route.ts` | API endpoint do OCR gazetek (Ollama Vision) |
+| `src/lib/ollama/client.ts` | Klient Ollama Vision API |
+| `src/lib/clustering.ts` | Funkcje klasteryzacji i cosine similarity |
+| `src/components/semantic/*` | Komponenty wyszukiwania semantycznego (ClusterGraph, ClusterDetails, SemanticSearch) |
+| `src/types/database.ts` | Typy TypeScript dla tabel (Project, GoogleTrend, SemanticCluster, GazetkaProduct, itp.) |
 
 ---
 

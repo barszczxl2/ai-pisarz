@@ -35,6 +35,98 @@ export interface SemanticCluster {
   similarity: number;
 }
 
+// Gazetki (Blix promotional flyers) types
+export interface GazetkaProduct {
+  id: number;
+  item_id: string;
+  title: string;
+  description: string | null;
+  link: string | null;
+  pub_date: string | null;
+  context_query: string | null;
+  embedding: string | null;
+  embedding_text: string | null;
+  fetched_at: string | null;
+  created_at: string | null;
+}
+
+export interface ProductSearchResult {
+  id: number;
+  item_id: string;
+  title: string;
+  description: string | null;
+  link: string | null;
+  pub_date: string | null;
+  context_query: string | null;
+  similarity: number;
+}
+
+// OCR Products (rrs_blix_products) - produkty wyciagniete z gazetek przez OCR
+export interface BlixProduct {
+  id: number;
+  gazetka_id: number | null;
+  page_number: number | null;
+  product_name: string;
+  brand: string | null;
+  price: number | null;
+  original_price: number | null;
+  discount_percent: number | null;
+  unit: string | null;
+  category: string | null;
+  image_url: string | null;
+  ocr_confidence: number;
+  embedding: string | null;
+  embedding_text: string | null;
+  created_at: string;
+}
+
+// OCR result from Vision API
+export interface OCRExtractedProduct {
+  name: string;
+  brand?: string | null;
+  price: number | null;
+  original_price?: number | null;
+  discount_percent?: number | null;
+  unit?: string | null;
+  category?: string | null;
+  confidence?: number;
+}
+
+export interface OCRApiResponse {
+  success: boolean;
+  products: OCRExtractedProduct[];
+  productCount: number;
+  pageNumber: number;
+  processingTimeMs?: number;
+  savedToDatabase: boolean;
+  savedCount?: number;
+  saveError?: string;
+}
+
+// Product categories for OCR
+export type ProductCategory =
+  | 'nabial'
+  | 'mieso'
+  | 'pieczywo'
+  | 'owoce_warzywa'
+  | 'napoje'
+  | 'slodycze'
+  | 'chemia'
+  | 'kosmetyki'
+  | 'inne';
+
+export const PRODUCT_CATEGORY_LABELS: Record<ProductCategory, string> = {
+  nabial: 'Nabial',
+  mieso: 'Mieso',
+  pieczywo: 'Pieczywo',
+  owoce_warzywa: 'Owoce i warzywa',
+  napoje: 'Napoje',
+  slodycze: 'Slodycze',
+  chemia: 'Chemia',
+  kosmetyki: 'Kosmetyki',
+  inne: 'Inne',
+};
+
 // Graph visualization types
 export interface ClusterNode {
   id: string;

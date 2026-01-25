@@ -13,6 +13,7 @@ import {
   Dices,
   TrendingUp,
   Search,
+  ShoppingCart,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -39,6 +40,11 @@ const navigation = [
     name: 'Wyszukiwanie semantyczne',
     href: '/semantyka',
     icon: Search,
+  },
+  {
+    name: 'Gazetki promocyjne',
+    href: '/gazetki',
+    icon: ShoppingCart,
   },
 ];
 

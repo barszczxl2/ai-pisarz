@@ -12,10 +12,14 @@ import {
   RefreshCw,
   Filter,
   Loader2,
+  PanelRightClose,
+  PanelRightOpen,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { GoogleTrendWithEmbedding, ClusterNode, SemanticCluster } from '@/types/database';
-import { buildGraphData, filterGraphData, ClusteringAlgorithm } from '@/lib/clustering';
+import { buildGraphData, filterGraphData, ClusteringAlgorithm, getClusterColor } from '@/lib/clustering';
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import dynamic from 'next/dynamic';
 import ClusterDetails from '@/components/semantic/ClusterDetails';
@@ -88,6 +92,10 @@ export default function SemantykaPage() {
   const [modalTrend, setModalTrend] = useState<ClusterNode | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  // UI state
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [hiddenClusters, setHiddenClusters] = useState<Set<number>>(new Set());
+
   // Load trends from Supabase
   const loadTrends = useCallback(async () => {
     setLoading(true);
@@ -150,14 +158,65 @@ export default function SemantykaPage() {
     return buildGraphData(trends, similarityThreshold, algorithm);
   }, [trends, similarityThreshold, algorithm]);
 
-  // Filter graph data
+  // Filter graph data (including hidden clusters)
   const filteredGraphData = useMemo(() => {
-    return filterGraphData(graphData, {
+    const filtered = filterGraphData(graphData, {
       minTraffic,
       onlyInteria,
       searchQuery,
     });
-  }, [graphData, minTraffic, onlyInteria, searchQuery]);
+
+    // Filter out hidden clusters
+    if (hiddenClusters.size > 0) {
+      const visibleNodes = filtered.nodes.filter(n => !hiddenClusters.has(n.cluster));
+      const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+      const visibleLinks = filtered.links.filter(
+        l => visibleNodeIds.has(l.source as string) && visibleNodeIds.has(l.target as string)
+      );
+      return { nodes: visibleNodes, links: visibleLinks };
+    }
+
+    return filtered;
+  }, [graphData, minTraffic, onlyInteria, searchQuery, hiddenClusters]);
+
+  // Get all unique clusters for the filter UI
+  const allClusters = useMemo(() => {
+    const clusterMap = new Map<number, { count: number; topKeyword: string }>();
+    for (const node of graphData.nodes) {
+      if (!clusterMap.has(node.cluster)) {
+        clusterMap.set(node.cluster, { count: 0, topKeyword: node.keyword });
+      }
+      const cluster = clusterMap.get(node.cluster)!;
+      cluster.count++;
+    }
+    return Array.from(clusterMap.entries())
+      .sort((a, b) => b[1].count - a[1].count)
+      .map(([id, data]) => ({ id, ...data }));
+  }, [graphData.nodes]);
+
+  // Toggle cluster visibility
+  const toggleCluster = useCallback((clusterId: number) => {
+    setHiddenClusters(prev => {
+      const next = new Set(prev);
+      if (next.has(clusterId)) {
+        next.delete(clusterId);
+      } else {
+        next.add(clusterId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Show all clusters
+  const showAllClusters = useCallback(() => {
+    setHiddenClusters(new Set());
+  }, []);
+
+  // Hide all clusters except one
+  const showOnlyCluster = useCallback((clusterId: number) => {
+    const toHide = new Set(allClusters.map(c => c.id).filter(id => id !== clusterId));
+    setHiddenClusters(toHide);
+  }, [allClusters]);
 
   // Handle semantic search results
   const handleSearchResults = useCallback((results: SemanticCluster[]) => {
@@ -298,9 +357,9 @@ export default function SemantykaPage() {
       </Card>
 
       {/* Main Content: Graph + Details */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className={`grid gap-6 ${showSidebar ? 'lg:grid-cols-3' : 'lg:grid-cols-1'}`}>
         {/* Graph */}
-        <div className="lg:col-span-2">
+        <div className={showSidebar ? 'lg:col-span-2' : 'lg:col-span-1'}>
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -308,12 +367,76 @@ export default function SemantykaPage() {
                   <Network className="h-5 w-5 text-purple-600" />
                   Mapa powiązań trendów
                 </CardTitle>
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <span>{stats.filteredNodes} trendów</span>
-                  <span>•</span>
-                  <span>{stats.totalClusters} grup</span>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <span>{stats.filteredNodes} trendów</span>
+                    <span>•</span>
+                    <span>{stats.totalClusters - hiddenClusters.size}/{stats.totalClusters} grup</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowSidebar(!showSidebar)}
+                    title={showSidebar ? 'Ukryj panel boczny' : 'Pokaż panel boczny'}
+                  >
+                    {showSidebar ? (
+                      <PanelRightClose className="h-4 w-4" />
+                    ) : (
+                      <PanelRightOpen className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
               </div>
+
+              {/* Cluster visibility controls */}
+              {allClusters.length > 1 && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-slate-500 uppercase">Widoczność grup</span>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={showAllClusters}
+                        className="text-xs h-6 px-2"
+                        disabled={hiddenClusters.size === 0}
+                      >
+                        <Eye className="h-3 w-3 mr-1" />
+                        Wszystkie
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {allClusters.slice(0, 10).map((cluster) => {
+                      const isHidden = hiddenClusters.has(cluster.id);
+                      const color = getClusterColor(cluster.id);
+                      return (
+                        <button
+                          key={cluster.id}
+                          onClick={() => toggleCluster(cluster.id)}
+                          onDoubleClick={() => showOnlyCluster(cluster.id)}
+                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs border transition-all ${
+                            isHidden
+                              ? 'border-slate-200 bg-slate-50 text-slate-400 opacity-50'
+                              : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                          }`}
+                          title={isHidden ? 'Kliknij aby pokazać' : 'Kliknij aby ukryć, 2x kliknij aby pokazać tylko tę'}
+                        >
+                          <span
+                            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: isHidden ? '#cbd5e1' : color }}
+                          />
+                          <span className="truncate max-w-[80px]">{cluster.topKeyword}</span>
+                          <span className="text-slate-400">({cluster.count})</span>
+                        </button>
+                      );
+                    })}
+                    {allClusters.length > 10 && (
+                      <span className="text-xs text-slate-400 self-center">+{allClusters.length - 10} więcej</span>
+                    )}
+                  </div>
+                </div>
+              )}
             </CardHeader>
             <CardContent className="p-0">
               {loading ? (
@@ -329,7 +452,7 @@ export default function SemantykaPage() {
                   data={filteredGraphData}
                   onNodeClick={handleNodeClick}
                   onNodeHover={handleNodeHover}
-                  height={500}
+                  height={showSidebar ? 500 : 600}
                 />
               )}
             </CardContent>
@@ -337,23 +460,24 @@ export default function SemantykaPage() {
         </div>
 
         {/* Details Panel */}
-        <div className="lg:col-span-1">
-          <Card className="h-[570px] flex flex-col">
-            <CardHeader className="pb-3 flex-shrink-0">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Grupy tematyczne</CardTitle>
-                {selectedNode && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearSelection}
-                    className="text-xs"
-                  >
-                    Wszystkie grupy
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
+        {showSidebar && (
+          <div className="lg:col-span-1">
+            <Card className="h-[570px] flex flex-col">
+              <CardHeader className="pb-3 flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">Grupy tematyczne</CardTitle>
+                  {selectedNode && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={clearSelection}
+                      className="text-xs"
+                    >
+                      Wszystkie grupy
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
             <CardContent className="flex-1 overflow-hidden p-0">
               <ClusterDetails
                 data={filteredGraphData}
@@ -363,6 +487,7 @@ export default function SemantykaPage() {
             </CardContent>
           </Card>
         </div>
+        )}
       </div>
 
       {/* Filters */}

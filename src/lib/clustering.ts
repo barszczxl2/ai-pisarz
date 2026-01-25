@@ -346,19 +346,35 @@ export function kMeansClustering(
   const embeddingArrays = ids.map(id => embeddings.get(id)!);
   const n = embeddingArrays.length;
 
-  if (n <= 2) {
-    // Too few points - each in its own cluster
+  if (n <= 1) {
+    // Single point - one cluster
     const result = new Map<string, number>();
-    ids.forEach((id, i) => result.set(id, i));
+    ids.forEach((id) => result.set(id, 0));
     return result;
   }
 
-  // Try different values of k
-  const minK = 2;
-  const testMaxK = Math.min(maxK, Math.floor(n / 2), n - 1);
+  if (n === 2) {
+    // Two points - check if similar enough to be in one cluster
+    const similarity = cosineSimilarity(embeddingArrays[0], embeddingArrays[1]);
+    const result = new Map<string, number>();
+    if (similarity > 0.5) {
+      // Similar - one cluster
+      ids.forEach((id) => result.set(id, 0));
+    } else {
+      // Different - two clusters
+      ids.forEach((id, i) => result.set(id, i));
+    }
+    return result;
+  }
 
-  let bestScore = -1;
-  let bestAssignments: number[] = [];
+  // Try different values of k (minimum 2, maximum depends on data size)
+  const minK = 2;
+  // For k-means to work well, we need at least 2 points per cluster on average
+  // So max k should be at most n/2, but at least 2 to have a valid range
+  const testMaxK = Math.max(minK, Math.min(maxK, Math.floor(n / 2), n - 1));
+
+  let bestScore = -Infinity;
+  let bestAssignments: number[] = new Array(n).fill(0);
 
   for (let k = minK; k <= testMaxK; k++) {
     const { assignments } = runKMeans(embeddingArrays, k);
