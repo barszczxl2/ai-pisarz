@@ -1,0 +1,4 @@
+Date,Slug,Usage,BYOK Usage,Requests,Prompt Tokens,Completion Tokens,Reasoning Tokens
+"2026-01-19 00:00:00","google/gemini-2.5-pro","0.112826","0","2","17786","5133","4433"
+"2026-01-19 00:00:00","deepseek/deepseek-chat-v3-0324","0.043355","0","2","16260","345","0"
+"2026-01-19 00:00:00","openai/gpt-4o-mini","9.942923","0.450697","475","2789431","59149","0"

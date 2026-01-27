@@ -1,0 +1,366 @@
+app:
+  description: ''
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: '[SEO 3.0] Content brief'
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.0.26@c1e643ac6a7732f6333a783320b4d3026fa5e31d8e7026375b98d44418d33f26
+kind: app
+version: 0.3.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        image_file_size_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        sourceType: start
+        targetType: llm
+      id: 1723118167135-source-1723118223405-target
+      source: '1723118167135'
+      sourceHandle: source
+      target: '1723118223405'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: llm
+      id: 1723118223405-source-1750974480597-target
+      source: '1723118223405'
+      sourceHandle: source
+      target: '1750974480597'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: 1750974480597-source-1723118344532-target
+      source: '1750974480597'
+      sourceHandle: source
+      target: '1723118344532'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: ''
+        selected: false
+        title: Start
+        type: start
+        variables:
+        - label: keywords
+          max_length: 48000000
+          options: []
+          required: true
+          type: paragraph
+          variable: keywords
+        - label: headings
+          max_length: 4800000000
+          options: []
+          required: true
+          type: paragraph
+          variable: headings
+        - label: knowledge_graph
+          max_length: 480000000000
+          options: []
+          required: true
+          type: paragraph
+          variable: knowledge_graph
+        - label: information_graph
+          max_length: 480000000
+          options: []
+          required: true
+          type: paragraph
+          variable: information_graph
+        - label: keyword
+          max_length: 256
+          options: []
+          required: false
+          type: text-input
+          variable: keyword
+      height: 194
+      id: '1723118167135'
+      position:
+        x: 80
+        y: 282
+      positionAbsolute:
+        x: 80
+        y: 282
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: ''
+        model:
+          completion_params:
+            temperature: 0
+          mode: chat
+          name: gpt-4.1-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: 4910c5ec-86f0-4294-8930-ba7f062e8de3
+          role: system
+          text: "Your role is to act as an expert content brief generator. You will\
+            \ be provided with distinct inputs, and your task is to precisely map\
+            \ relevant knowledge and keywords to a predefined list of content headings.\n\
+            \n# Inputs Provided:\n\n- <keywords>: A comprehensive list of individual\
+            \ keywords and key phrases that must be integrated into the content brief.\n\
+            \n- <information_graph>: A structured representation containing factual\
+            \ data, statistics, verifiable statements, and concrete details pertinent\
+            \ to the content topic.\n\n- <knowledge_graph>: A structured representation\
+            \ illustrating conceptual relationships, hierarchies, definitions, and\
+            \ broader contextual information related to the content topic.\n\n- <headings>:\
+            \ An ordered list of content headings, each enclosed in <hX>...</hX> tags\
+            \ (e.g., <h2>...</h2>, <h3>...</h3>). These headings define the immutable\
+            \ structure of the content brief.\n\n# Objective:\n\nFor each heading\
+            \ provided in <headings>, you must:\n- Extract and synthesize the most\
+            \ relevant and comprehensive knowledge from both the <information_graph>\
+            \ and <knowledge_graph>.\n\n- Assign all designated keywords from <keywords>\
+            \ to the appropriate headings, ensuring every keyword is used at least\
+            \ once.\n\n# Key Principles & Constraints:\n- Exact Heading Preservation:\
+            \ The text and HTML tag structure (<hX>...</hX>) of each heading from\
+            \ the <headings> input must be preserved exactly in the output. Do not\
+            \ alter, rephrase, or modify them in any way.\n\n- Exhaustive Keyword\
+            \ Coverage: Every single keyword provided in the <keywords> list must\
+            \ be assigned to at least one heading. If a keyword does not have an immediately\
+            \ obvious or direct fit, assign it to the most broadly related heading\
+            \ to ensure its inclusion.\n\n- Comprehensive Knowledge Integration: Utilize\
+            \ all relevant information and relationships from both the <information_graph>\
+            \ and <knowledge_graph> that pertain to each heading. Synthesize this\
+            \ information coherently.\n\n- Token Limit Adherence: The combined \"\
+            knowledge\" and \"keywords\" content for each heading object must not\
+            \ exceed 500 tokens each. If the comprehensive knowledge or keywords for\
+            \ a heading would naturally exceed this, prioritize the most critical,\
+            \ most relevant, and most unique points or keywords, and concisely summarize\
+            \ to fit within the limit. Avoid abrupt truncation; aim for a complete,\
+            \ albeit condensed, thought.\n\n- Strict Output Format: The output must\
+            \ be a JSON array of objects, exactly as specified below, with no additional\
+            \ text, commentary, preambles, or postambles.\n\n# Step-by-Step Task Execution:\n\
+            \n- Thoroughly review the <keywords> list to understand all required terms.\n\
+            \n- Analyze the <information_graph> and <knowledge_graph> to grasp the\
+            \ factual data, conceptual relationships, and overall domain knowledge.\n\
+            \n- Iterate through each heading in the <headings> input:\na.  Knowledge\
+            \ Assignment: Identify all direct, supporting, and contextual information\
+            \ from both <information_graph> and <knowledge_graph> that is highly relevant\
+            \ to the current heading. Synthesize this into a concise, informative\
+            \ summary.\nb.  Keyword Assignment: From the <keywords> list, assign all\
+            \ keywords that logically and directly relate to the current heading.\
+            \ Mark these keywords as \"used.\"\n\n- After processing all headings,\
+            \ perform a final review of the <keywords> list. Any keywords not yet\
+            \ assigned must be assigned to the most appropriate, or most general,\
+            \ heading that can accommodate them without violating the 500-token limit.\
+            \ Prioritize distributing remaining keywords logically.\n\n- Construct\
+            \ the final output JSON array.\n\n# Desired Output Format (Strict JSON):\n\
+            \n[\n  {\n    \"heading\": \"<hX>...</hX>\",\n    \"knowledge\": \"A synthesized\
+            \ summary of information and knowledge relevant to this heading, extracted\
+            \ from the provided graphs. This should be concise and within the 500-token\
+            \ limit.\",\n    \"keywords\": \"A comma-separated list of keywords directly\
+            \ assigned to this heading from the input <keywords> list, ensuring all\
+            \ keywords are covered and within the 500-token limit.\"\n  },\n  {\n\
+            \    \"heading\": \"<hX>...</hX>\",\n    \"knowledge\": \"...\",\n   \
+            \ \"keywords\": \"...\"\n  }\n]\n"
+        - id: 4cd347e3-67e3-4b24-b6c8-6fa74c577832
+          role: user
+          text: '<keywords>
+
+            {{#1723118167135.keywords#}}
+
+            </keywords>
+
+
+            <information_graph>
+
+            {{#1723118167135.information_graph#}}
+
+            </information_graph>
+
+
+            <knowledge_graph>
+
+            {{#1723118167135.knowledge_graph#}}
+
+            </knowledge_graph>
+
+
+            <headings>
+
+            {{#1723118167135.headings#}}
+
+            </headings>'
+        selected: false
+        title: LLM
+        type: llm
+        variables: []
+        vision:
+          configs:
+            detail: high
+          enabled: false
+      height: 90
+      id: '1723118223405'
+      position:
+        x: 462
+        y: 282
+      positionAbsolute:
+        x: 462
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: ''
+        outputs:
+        - value_selector:
+          - '1723118223405'
+          - text
+          variable: brief
+        - value_selector:
+          - '1750974480597'
+          - text
+          variable: html
+        selected: false
+        title: End
+        type: end
+      height: 116
+      id: '1723118344532'
+      position:
+        x: 1363.7108257196587
+        y: 282
+      positionAbsolute:
+        x: 1363.7108257196587
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: ''
+        model:
+          completion_params: {}
+          mode: chat
+          name: o4-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: f60bfb4e-1acf-40a6-92c9-c334f672d93b
+          role: system
+          text: "You will be converting a given JSON object into a simple HTML report.\
+            \ Your task is to create an easy-to-read HTML document using only basic\
+            \ HTML syntax. \n\nFollow these steps to create the HTML report:\n\n1.\
+            \ Start with the basic HTML structure:\n   - Include <html>, and <body>\
+            \ tags\n\n2. Iterate through the JSON object:\n   - For each key-value\
+            \ pair in the JSON, create a new section\n   - Use <h2> tags for the keys\
+            \ (property names) - uppercase first letter \n   - Handle the values based\
+            \ on their data type:\n     a. For strings, numbers, and booleans: Display\
+            \ them in a <p> tag\n     b. For arrays: Create an unordered list <ul>\
+            \ with each item in a <li> tag - uppercase first letter \n\n3. Use proper\
+            \ indentation to make the HTML structure clear:\n   - Indent nested elements\
+            \ with 2 spaces\n   - Keep opening and closing tags aligned\n\n4. Keep\
+            \ the HTML simple and avoid using any CSS or advanced HTML features\n\n\
+            Here's a basic example of how your output should be structured:\n\n<html>\n\
+            <body>\n<h1>Content brief</h1>\n<h4><keyword></h4>\n  <h2>Property1</h2>\n\
+            \  <p>Value1</p>\n  <h2>Property2</h2>\n  <ul>\n    <li>Item1</li>\n \
+            \   <li>Item2</li>\n  </ul>\n</body>\n</html>\n\nPlease provide your complete\
+            \ HTML output.\n\nTranslate everything to Polish"
+        - id: 8cbfcdc9-9342-40b0-ab72-73175cbdf8af
+          role: user
+          text: 'Here''s the JSON data you''ll be working with:
+
+            <json_data>
+
+            {{#1723118223405.text#}}
+
+            </json_data>
+
+
+            <keyword>
+
+            {{#1723118167135.keyword#}}
+
+            </keyword>'
+        selected: false
+        title: html
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 90
+      id: '1750974480597'
+      position:
+        x: 899.8056703237944
+        y: 282
+      positionAbsolute:
+        x: 899.8056703237944
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: -163.82835837633502
+      y: -18.49422437045041
+      zoom: 1.024983012854266

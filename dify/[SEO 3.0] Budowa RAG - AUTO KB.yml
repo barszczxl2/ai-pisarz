@@ -1,0 +1,898 @@
+app:
+  description: 'Workflow z automatycznym zapisem do bazy wiedzy'
+  icon: "\U0001F4DA"
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: '[SEO 3.0] Budowa RAG - AUTO KB'
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openrouter:0.0.22@99ef4cf4e08292c28806abaf24f295ed66e04e4b9e74385b487fd0767c7f56df
+    version: null
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/jina_tool:0.0.7@08d5935b56b9ddaa633204874c0fd796c14971489b6379fad1a430b5ec99b569
+    version: null
+kind: app
+version: 0.4.0
+workflow:
+  conversation_variables: []
+  environment_variables:
+  - description: 'API Key do Dataset w Dify'
+    id: dataset_api_key
+    name: DATASET_API_KEY
+    value: 'dataset-p6jXE0TrFn6LtoXNttQF3447'
+    value_type: secret
+  - description: 'ID bazy wiedzy w Dify'
+    id: dataset_id
+    name: DATASET_ID
+    value: '5730b5eb-f9af-474d-8856-7a8d11dbdac0'
+    value_type: string
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        image_file_size_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: iteration
+      id: 1718566825729-source-1718566787996-target
+      source: '1718566825729'
+      sourceHandle: source
+      target: '1718566787996'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: code
+      id: 1723028732575-source-1718566825729-target
+      source: '1723028732575'
+      sourceHandle: source
+      target: '1718566825729'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        sourceType: start
+        targetType: http-request
+      id: 1718558764026-source-1734462057043-target
+      source: '1718558764026'
+      sourceHandle: source
+      target: '1734462057043'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        sourceType: http-request
+        targetType: llm
+      id: 1734462057043-source-1723028732575-target
+      source: '1734462057043'
+      sourceHandle: source
+      target: '1723028732575'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: iteration
+        targetType: llm
+      id: 1718566787996-source-1723029663619-target
+      source: '1718566787996'
+      sourceHandle: source
+      target: '1723029663619'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: iteration
+        targetType: llm
+      id: 1718566787996-source-1750950298285-target
+      source: '1718566787996'
+      sourceHandle: source
+      target: '1750950298285'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: true
+        isInLoop: false
+        iteration_id: '1718566787996'
+        sourceType: iteration-start
+        targetType: tool
+      id: 1718566787996start0-source-1759907720949-target
+      source: 1718566787996start0
+      sourceHandle: source
+      target: '1759907720949'
+      targetHandle: target
+      type: custom
+      zIndex: 1002
+    # NEW EDGES - Connect LLMs to Code Split node
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: code
+      id: 1723029663619-source-split_chunks_node-target
+      source: '1723029663619'
+      sourceHandle: source
+      target: 'split_chunks_node'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        sourceType: llm
+        targetType: code
+      id: 1750950298285-source-split_chunks_node-target
+      source: '1750950298285'
+      sourceHandle: source
+      target: 'split_chunks_node'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # Code Split to KB Iteration
+    - data:
+        isInIteration: false
+        sourceType: code
+        targetType: iteration
+      id: split_chunks_node-source-kb_iteration_node-target
+      source: 'split_chunks_node'
+      sourceHandle: source
+      target: 'kb_iteration_node'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # KB Iteration to End
+    - data:
+        isInIteration: false
+        sourceType: iteration
+        targetType: end
+      id: kb_iteration_node-source-1718559325567-target
+      source: 'kb_iteration_node'
+      sourceHandle: source
+      target: '1718559325567'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # Inside KB Iteration: start to HTTP
+    - data:
+        isInIteration: true
+        iteration_id: 'kb_iteration_node'
+        sourceType: iteration-start
+        targetType: http-request
+      id: kb_iteration_start-source-kb_http_node-target
+      source: 'kb_iteration_start'
+      sourceHandle: source
+      target: 'kb_http_node'
+      targetHandle: target
+      type: custom
+      zIndex: 1002
+    nodes:
+    - data:
+        desc: ''
+        selected: false
+        title: Start
+        type: start
+        variables:
+        - label: keyword
+          max_length: 256
+          options: []
+          required: true
+          type: paragraph
+          variable: keyword
+        - label: language
+          max_length: 48
+          options: []
+          required: true
+          type: text-input
+          variable: language
+        - label: headings
+          max_length: 48000000
+          options: []
+          required: true
+          type: paragraph
+          variable: headings
+      height: 140
+      id: '1718558764026'
+      position:
+        x: -147
+        y: 282
+      positionAbsolute:
+        x: -147
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        desc: ''
+        outputs:
+        - value_selector:
+          - '1723029663619'
+          - text
+          variable: dokladne
+        - value_selector:
+          - '1750950298285'
+          - text
+          variable: ogolne
+        - value_selector:
+          - 'kb_iteration_node'
+          - output
+          variable: kb_results
+        selected: false
+        title: Koniec
+        type: end
+      height: 114
+      id: '1718559325567'
+      position:
+        x: 3600
+        y: 282
+      positionAbsolute:
+        x: 3600
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        desc: ''
+        error_handle_mode: terminated
+        height: 517
+        is_parallel: true
+        iterator_selector:
+        - '1718566825729'
+        - result
+        output_selector:
+        - '1759907720949'
+        - text
+        output_type: array[string]
+        parallel_nums: 5
+        selected: false
+        startNodeType: http-request
+        start_node_id: 1718566787996start0
+        title: Iteracja WEB
+        type: iteration
+        width: 439
+      height: 517
+      id: '1718566787996'
+      position:
+        x: 1380
+        y: 282
+      positionAbsolute:
+        x: 1380
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 439
+      zIndex: 1
+    - data:
+        code: "function main(input) {\n    const outerData = JSON.parse(input.data);\n\n    let jsonData = null;\n    if (outerData && outerData.data && outerData.data.data) {\n        jsonData = outerData.data.data;\n    } else {\n        return { result: [] };\n    }\n\n    let allUrls = [];\n\n    if (jsonData.results && jsonData.results.organic_results) {\n        jsonData.results.organic_results.forEach(item => {\n            if (item.url) {\n                allUrls.push(item.url);\n            }\n        });\n    }\n\n    if (jsonData.results && jsonData.results.snippets_data && jsonData.results.snippets_data.ai_overview) {\n        const aiOverview = jsonData.results.snippets_data.ai_overview;\n        if (aiOverview.sources) {\n            aiOverview.sources.forEach(source => {\n                if (source.url) {\n                    const cleanedUrl = source.url.split('#:~:text=')[0];\n                    allUrls.push(cleanedUrl);\n                }\n            });\n        }\n    }\n\n    const uniqueUrls = [...new Set(allUrls)];\n    const limitedUniqueUrlList = uniqueUrls.slice(0, 22);\n\n    return { result: limitedUniqueUrlList };\n}\n"
+        code_language: javascript
+        desc: ''
+        outputs:
+          result:
+            children: null
+            type: array[string]
+        selected: false
+        title: Kod
+        type: code
+        variables:
+        - value_selector:
+          - '1734462057043'
+          - body
+          variable: data
+      height: 52
+      id: '1718566825729'
+      position:
+        x: 965
+        y: 282
+      positionAbsolute:
+        x: 965
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: ''
+        model:
+          completion_params:
+            temperature: 0
+          mode: chat
+          name: openai/gpt-4o-mini
+          provider: langgenius/openrouter/openrouter
+        prompt_template:
+        - id: 3fd5bc20-ab53-411e-932d-10587708aa01
+          role: system
+          text: 'You will be given a list of text entries. Your task is to extract brand names and domain names from this list.
+
+
+            Extract all brand names and domain names from the given list. A brand name is typically a company or product name, while a domain name is a web address (e.g., example.com).
+
+            Provide your output in the following format:
+
+            <brands>
+
+            [List of extracted brand names, one per line]
+
+            </brands>
+
+            <domains>
+
+            [List of extracted domain names, one per line]
+
+            </domains>'
+        - id: c53a8ee2-2501-4863-9574-ceb5225adc87
+          role: user
+          text: 'Here is the list:
+
+            <list>
+
+            {{#1734462057043.body#}}
+
+            </list>'
+        selected: false
+        title: Ekstrakcja brandów
+        type: llm
+        variables: []
+        vision:
+          configs:
+            detail: high
+          enabled: false
+      height: 88
+      id: '1723028732575'
+      position:
+        x: 592
+        y: 282
+      positionAbsolute:
+        x: 592
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: ''
+        model:
+          completion_params:
+            temperature: 0.1
+          mode: chat
+          name: google/gemini-2.5-flash
+          provider: langgenius/openrouter/openrouter
+        prompt_config:
+          jinja2_variables: []
+        prompt_template:
+        - edition_type: basic
+          id: 72d13ea7-b4a0-4d6a-89b8-112cf8757be4
+          role: system
+          text: "You are an expert content analyst tasked with chunking and structuring information from a given text. Your goal is to create a set of headings and associated knowledge based on the content provided.\n\nChunking Process:\n\na) Identify a main topic related to the primary keyword.\nb) Formulate a clear, concise heading that reflects this topic.\nc) List out relevant information from the content related to this topic.\nd) Consider potential subheadings or related topics.\ne) Extract and organize comprehensive knowledge about this topic from the listed information.\nf) Review the heading and knowledge pair to ensure they are well-matched and the knowledge is sufficiently detailed.\ng) Check that the chunk doesn't mention any excluded brands or entities.\nh) Verify that the heading-knowledge pair is relevant to the main keyword and fits within the scope of the provided headings list.\n\nOutput Format:\nPresent your results in the following format:\n\n[Heading 1]\n[Comprehensive knowledge about Heading 1]\n###\n[Heading 2]\n[Comprehensive knowledge about Heading 2]\n###\n[Continue for all relevant headings]\n\nImportant notes:\n- Each heading should be on a single line.\n- The knowledge should be as comprehensive as possible while remaining relevant to the heading.\n- Use \"###\" as a separator between each heading-knowledge pair.\n- Do not include phrases like \"Ask Question\" or \"Give Answer\" in the output.\n- Do not use any HTML tags (like <h2> or any <hX>) in the output."
+        - edition_type: basic
+          id: d621e81c-d1ba-4645-ac0a-2a93ba5dce27
+          role: user
+          text: 'Main Focus:
+
+            The primary keyword for this task is:
+
+            <main_keyword>
+
+            {{#1718558764026.keyword#}}
+
+            </main_keyword>
+
+
+            Output Language:
+
+            Please provide all output in the following language:
+
+            <output_language>
+
+            {{#1718558764026.language#}}
+
+            </output_language>
+
+
+            Headings to Consider:
+
+            Here is a list of headings to build knowledge for, based on the content:
+
+            <headings_to_answer>
+
+            {{#1718558764026.headings#}}
+
+            </headings_to_answer>
+
+
+            Brands to Exclude:
+
+            Do not mention or include any of the following entities, brands, or names in your output:
+
+            <brands_to_exclude>
+
+            {{#1723028732575.text#}}
+
+            </brands_to_exclude>
+
+
+            Content to Analyze:
+
+            Here is the content you need to chunk and structure:
+
+            <content_to_chunk>
+
+            {{#1718566787996.output#}}
+
+            </content_to_chunk>'
+        selected: false
+        title: Pytania dokladne
+        type: llm
+        variables: []
+        vision:
+          configs:
+            detail: high
+          enabled: false
+      height: 88
+      id: '1723029663619'
+      position:
+        x: 2202
+        y: 121
+      positionAbsolute:
+        x: 2202
+        y: 121
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        desc: ''
+        isInIteration: true
+        selected: false
+        title: ''
+        type: iteration-start
+      draggable: false
+      height: 48
+      id: 1718566787996start0
+      parentId: '1718566787996'
+      position:
+        x: 24
+        y: 68
+      positionAbsolute:
+        x: 1404
+        y: 350
+      selectable: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom-iteration-start
+      width: 44
+      zIndex: 1002
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - type: text
+            value: ''
+          type: none
+        desc: ''
+        headers: Authorization:Bearer serpdata_69434ac1332c6b77ad7b03af6eedf3aa-QPnQoQ--KZ4
+        method: get
+        params: ''
+        retry_config:
+          max_retries: '2'
+          retry_enabled: true
+          retry_interval: 100
+        selected: false
+        ssl_verify: true
+        timeout:
+          max_connect_timeout: 0
+          max_read_timeout: 0
+          max_write_timeout: 0
+        title: "Żądanie HTTP 2"
+        type: http-request
+        url: https://api.serpdata.io/v1/search?keyword={{#1718558764026.keyword#}}&hl=pl&gl=pl
+        variables: []
+      height: 188
+      id: '1734462057043'
+      position:
+        x: 229
+        y: 282
+      positionAbsolute:
+        x: 229
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: ''
+        model:
+          completion_params:
+            temperature: 0.1
+          mode: chat
+          name: openai/gpt-4.1-mini
+          provider: langgenius/openrouter/openrouter
+        prompt_template:
+        - id: 9bc2d542-30a0-4c30-b069-49e686d59d8b
+          role: system
+          text: "You will be chunking content into a set of all possible questions and answers. Each chunk should focus on a main topic and be no more than 400 tokens long. Follow these steps:\n\n1. The main keyword to focus on is <keyword>\n\n2. Output should be in the following language <language>\n\n3. Exclude any entities, brands, or names from this list <brands_to_exclude>\n\n4. Chunk the content into sets of all possible questions and answers following these guidelines:\n   - Each question should reflect a main topic related to <keyword> from the content.\n   - Ensure that each chunk (question + answer) does not exceed 400 tokens.\n   - Write the question on one line.\n   - On the next line, write the answer as long as possible while staying within the 400 token limit.\n   - After each question-answer pair, add \"###\" as a separator.\n   - Do not include \"Ask Question\" or \"Give Answer\" in the output.\n   - Do not mention or include any of the brands, entities, or names listed in the <brands_to_exclude> section.\n\n5. Here's an example of the desired output format:\n\nWhat is the capital of France?\nThe capital of France is Paris. It is known for its iconic landmarks such as the Eiffel Tower and the Louvre Museum.\n###\nHow does photosynthesis work?\nPhotosynthesis is the process by which plants use sunlight, water, and carbon dioxide to produce oxygen and energy in the form of sugar.\n###\n\n6. Begin chunking the content now, following the instructions above. Output in plain text in <language>."
+        - id: 1c4e1af1-413b-4add-882d-4f12385242db
+          role: user
+          text: '<keyword>
+
+            {{#1718558764026.keyword#}}
+
+            </keyword>
+
+
+            <language>
+
+            {{#1718558764026.language#}}.
+
+            </language>
+
+
+            <brands_to_exclude>
+
+            {{#1723028732575.text#}}
+
+            </brands_to_exclude>
+
+
+            Here is the content to be chunked:
+
+            <content>
+
+            {{#1718566787996.output#}}
+
+            </content>'
+        selected: false
+        title: Pytania ogolne
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 88
+      id: '1750950298285'
+      position:
+        x: 2202
+        y: 400
+      positionAbsolute:
+        x: 2202
+        y: 400
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        default_value:
+        - key: text
+          type: string
+          value: ' '
+        - key: json
+          type: array[object]
+          value: '[]'
+        error_strategy: default-value
+        isInIteration: true
+        isInLoop: false
+        is_team_authorization: false
+        iteration_id: '1718566787996'
+        paramSchemas:
+        - name: url
+          type: string
+          required: true
+        params:
+          url: ''
+        provider_id: langgenius/jina_tool/jina
+        provider_name: langgenius/jina_tool/jina
+        provider_type: builtin
+        retry_config:
+          max_retries: 3
+          retry_enabled: true
+          retry_interval: 1000
+        selected: false
+        title: Fetch Single Page
+        tool_configurations:
+          gather_all_images_at_the_end:
+            type: constant
+            value: 0
+          gather_all_links_at_the_end:
+            type: constant
+            value: true
+          image_caption:
+            type: constant
+            value: 0
+          max_retries:
+            type: constant
+            value: 3
+          no_cache:
+            type: constant
+            value: 0
+          no_cache_track:
+            type: constant
+            value: 0
+          proxy_server:
+            type: mixed
+            value: null
+          remove_images:
+            type: constant
+            value: true
+          summary:
+            type: constant
+            value: false
+          target_selector:
+            type: mixed
+            value: ''
+          wait_for_selector:
+            type: mixed
+            value: null
+        tool_description: Fetch the target URL and convert it into LLM-friendly markdown.
+        tool_label: Fetch Single Page
+        tool_name: jina_reader
+        tool_node_version: '2'
+        tool_parameters:
+          request_params:
+            type: mixed
+            value: null
+          url:
+            type: mixed
+            value: '{{#1718566787996.item#}}'
+        type: tool
+      height: 429
+      id: '1759907720949'
+      parentId: '1718566787996'
+      position:
+        x: 128
+        y: 68
+      positionAbsolute:
+        x: 1508
+        y: 350
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 1002
+    # ============================================
+    # NEW NODES FOR AUTOMATIC KB UPLOAD
+    # ============================================
+    # Code node to split chunks
+    - data:
+        code: |
+          function main({dokladne, ogolne, keyword}) {
+              // Połącz oba wyniki
+              const allText = (dokladne || '') + '\n###\n' + (ogolne || '');
+
+              // Podziel po separatorze ###
+              const chunks = allText.split('###')
+                  .map(chunk => chunk.trim())
+                  .filter(chunk => chunk.length > 50); // Minimalna długość chunka
+
+              // Dodaj keyword do każdego chunka jako metadata
+              const chunksWithMeta = chunks.map((chunk, index) => ({
+                  text: chunk,
+                  name: keyword.substring(0, 30).replace(/[^a-zA-Z0-9ąćęłńóśźżĄĆĘŁŃÓŚŹŻ\s]/g, '') + '_chunk_' + (index + 1),
+                  index: index
+              }));
+
+              return {
+                  chunks: chunksWithMeta,
+                  total_chunks: chunksWithMeta.length
+              };
+          }
+        code_language: javascript
+        desc: 'Dzieli wygenerowany tekst na chunki po separatorze ###'
+        outputs:
+          chunks:
+            children: null
+            type: array[object]
+          total_chunks:
+            children: null
+            type: number
+        selected: false
+        title: Split Chunks
+        type: code
+        variables:
+        - value_selector:
+          - '1723029663619'
+          - text
+          variable: dokladne
+        - value_selector:
+          - '1750950298285'
+          - text
+          variable: ogolne
+        - value_selector:
+          - '1718558764026'
+          - keyword
+          variable: keyword
+      height: 88
+      id: 'split_chunks_node'
+      position:
+        x: 2550
+        y: 282
+      positionAbsolute:
+        x: 2550
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    # Iteration node for KB upload
+    - data:
+        desc: 'Iteruje przez chunki i wysyła do bazy wiedzy'
+        error_handle_mode: continue-on-error
+        height: 300
+        is_parallel: false
+        iterator_selector:
+        - 'split_chunks_node'
+        - chunks
+        output_selector:
+        - 'kb_http_node'
+        - body
+        output_type: array[string]
+        parallel_nums: 1
+        selected: false
+        startNodeType: http-request
+        start_node_id: kb_iteration_start
+        title: Upload to Knowledge Base
+        type: iteration
+        width: 400
+      height: 300
+      id: 'kb_iteration_node'
+      position:
+        x: 2900
+        y: 200
+      positionAbsolute:
+        x: 2900
+        y: 200
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 400
+      zIndex: 1
+    # Iteration start node
+    - data:
+        desc: ''
+        isInIteration: true
+        selected: false
+        title: ''
+        type: iteration-start
+      draggable: false
+      height: 48
+      id: kb_iteration_start
+      parentId: 'kb_iteration_node'
+      position:
+        x: 24
+        y: 68
+      positionAbsolute:
+        x: 2924
+        y: 268
+      selectable: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom-iteration-start
+      width: 44
+      zIndex: 1002
+    # HTTP Request node to send to KB
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data: |
+            {
+              "name": "{{#kb_iteration_node.item.name#}}",
+              "text": "{{#kb_iteration_node.item.text#}}",
+              "indexing_technique": "high_quality",
+              "process_rule": {
+                "mode": "automatic"
+              }
+            }
+          type: raw-text
+        desc: 'Wysyła chunk do bazy wiedzy Dify'
+        headers: |
+          Authorization: Bearer dataset-p6jXE0TrFn6LtoXNttQF3447
+          Content-Type: application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 3
+          retry_enabled: true
+          retry_interval: 1000
+        selected: false
+        ssl_verify: true
+        timeout:
+          max_connect_timeout: 30000
+          max_read_timeout: 60000
+          max_write_timeout: 30000
+        title: Send to Knowledge Base
+        type: http-request
+        url: http://localhost/v1/datasets/5730b5eb-f9af-474d-8856-7a8d11dbdac0/document/create-by-text
+        variables: []
+      height: 188
+      id: 'kb_http_node'
+      parentId: 'kb_iteration_node'
+      position:
+        x: 128
+        y: 68
+      positionAbsolute:
+        x: 3028
+        y: 268
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 1002
+    viewport:
+      x: -500
+      y: 200
+      zoom: 0.5
+  rag_pipeline_variables: []
