@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { extractProducts, getBlixFlyerInfo, OCRResult } from '@/lib/ollama/client';
+import {
+  extractProducts,
+  getBlixFlyerInfo,
+  OCRResult,
+  VisionProvider,
+  isProviderConfigured,
+} from '@/lib/ollama/client';
 
 /**
  * Generate embedding for product text using Jina AI
@@ -21,7 +27,7 @@ async function generateProductEmbedding(text: string): Promise<number[]> {
     body: JSON.stringify({
       input: [text],
       model: 'jina-embeddings-v3',
-      task: 'retrieval.passage', // Passage for storage (matching z query)
+      task: 'retrieval.passage',
       dimensions: 1024,
       normalized: true,
       embedding_type: 'float',
@@ -51,11 +57,20 @@ async function generateProductEmbedding(text: string): Promise<number[]> {
  * - gazetkaId: number - ID of the gazetka in rrs_blix_gazetki
  * - pageNumber: number - Page number (1-indexed)
  * - saveToDatabase: boolean - Whether to save products to rrs_blix_products (default: false)
+ * - provider: 'ollama' | 'openrouter' - Vision API provider (default: 'ollama')
+ * - model: string - Model ID to use (default: based on provider)
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { imageUrl, gazetkaId, pageNumber = 1, saveToDatabase = false } = body;
+    const {
+      imageUrl,
+      gazetkaId,
+      pageNumber = 1,
+      saveToDatabase = false,
+      provider = 'ollama',
+      model,
+    } = body;
 
     // Validate input
     if (!imageUrl || typeof imageUrl !== 'string') {
@@ -75,13 +90,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check Ollama API key
-    if (!process.env.OLLAMA_API_KEY) {
+    // Validate provider
+    const validProvider: VisionProvider = provider === 'openrouter' ? 'openrouter' : 'ollama';
+
+    // Check if provider is configured
+    if (!isProviderConfigured(validProvider)) {
+      const keyName = validProvider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'OLLAMA_API_KEY';
       return NextResponse.json(
-        { error: 'OLLAMA_API_KEY is not configured. Add it to .env.local' },
+        { error: `${keyName} is not configured. Add it to .env.local` },
         { status: 500 }
       );
     }
+
+    // Model validation - accept any model string
+    // Models are validated dynamically via /api/ocr-models endpoint
 
     // Get flyer info if it's a Blix page URL
     let totalPages: number | undefined;
@@ -98,7 +120,10 @@ export async function POST(request: NextRequest) {
     // Extract products from image
     let ocrResult: OCRResult;
     try {
-      ocrResult = await extractProducts(imageUrl, pageNumber);
+      ocrResult = await extractProducts(imageUrl, pageNumber, {
+        provider: validProvider,
+        model: model || undefined,
+      });
     } catch (ocrError) {
       console.error('OCR extraction error:', ocrError);
       const message = ocrError instanceof Error ? ocrError.message : 'OCR extraction failed';
@@ -133,7 +158,6 @@ export async function POST(request: NextRequest) {
             }
           } catch (embErr) {
             console.error('Failed to generate embedding for product:', embErr);
-            // Continue without embedding
           }
 
           productsToInsert.push({
@@ -159,15 +183,18 @@ export async function POST(request: NextRequest) {
 
         if (insertError) {
           console.error('Failed to insert products:', insertError);
-          // Return products even if insert fails
           return NextResponse.json({
             success: true,
             products: ocrResult.products,
             productCount: ocrResult.products.length,
             pageNumber,
+            totalPages,
             processingTimeMs: ocrResult.processing_time_ms,
             savedToDatabase: false,
             saveError: insertError.message,
+            sourceImageUrl: ocrResult.source_image_url,
+            modelUsed: ocrResult.model_used,
+            providerUsed: ocrResult.provider_used,
           });
         }
 
@@ -176,21 +203,28 @@ export async function POST(request: NextRequest) {
           products: ocrResult.products,
           productCount: ocrResult.products.length,
           pageNumber,
+          totalPages,
           processingTimeMs: ocrResult.processing_time_ms,
           savedToDatabase: true,
           savedCount: productsToInsert.length,
+          sourceImageUrl: ocrResult.source_image_url,
+          modelUsed: ocrResult.model_used,
+          providerUsed: ocrResult.provider_used,
         });
       } catch (dbError) {
         console.error('Database error:', dbError);
-        // Return products even if DB fails
         return NextResponse.json({
           success: true,
           products: ocrResult.products,
           productCount: ocrResult.products.length,
           pageNumber,
+          totalPages,
           processingTimeMs: ocrResult.processing_time_ms,
           savedToDatabase: false,
           saveError: dbError instanceof Error ? dbError.message : 'Database error',
+          sourceImageUrl: ocrResult.source_image_url,
+          modelUsed: ocrResult.model_used,
+          providerUsed: ocrResult.provider_used,
         });
       }
     }
@@ -204,6 +238,9 @@ export async function POST(request: NextRequest) {
       totalPages,
       processingTimeMs: ocrResult.processing_time_ms,
       savedToDatabase: false,
+      sourceImageUrl: ocrResult.source_image_url,
+      modelUsed: ocrResult.model_used,
+      providerUsed: ocrResult.provider_used,
     });
   } catch (error) {
     console.error('OCR gazetka error:', error);
@@ -215,29 +252,36 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * GET: Test OCR connection and configuration
+ * GET: Get OCR configuration info
+ * For available models use /api/ocr-models endpoint
  */
 export async function GET() {
-  const hasOllamaKey = !!process.env.OLLAMA_API_KEY;
-  const hasJinaKey = !!process.env.JINA_API_KEY;
-  const ollamaUrl = process.env.OLLAMA_API_URL || 'https://api.ollama.com/v1';
-  const visionModel = process.env.OLLAMA_VISION_MODEL || 'mistral-large-3';
+  const ollamaConfigured = isProviderConfigured('ollama');
+  const openrouterConfigured = isProviderConfigured('openrouter');
 
   return NextResponse.json({
     status: 'ok',
-    config: {
-      ollamaConfigured: hasOllamaKey,
-      jinaConfigured: hasJinaKey,
-      ollamaUrl,
-      visionModel,
+    providers: {
+      ollama: {
+        configured: ollamaConfigured,
+        url: process.env.OLLAMA_API_URL || 'https://ollama.com/v1',
+      },
+      openrouter: {
+        configured: openrouterConfigured,
+        url: process.env.OPENROUTER_API_URL || 'https://openrouter.ai/api/v1',
+      },
     },
+    defaultModel: process.env.OLLAMA_VISION_MODEL || 'qwen3-vl:235b-instruct',
+    modelsEndpoint: '/api/ocr-models',
     usage: {
       method: 'POST',
       body: {
-        imageUrl: 'URL of flyer page image',
+        imageUrl: 'URL of flyer page image (required)',
         gazetkaId: 'ID from rrs_blix_gazetki (optional)',
         pageNumber: 'Page number 1-indexed (default: 1)',
         saveToDatabase: 'Save products to rrs_blix_products (default: false)',
+        provider: 'ollama | openrouter (default: ollama)',
+        model: 'Model ID (optional)',
       },
     },
   });

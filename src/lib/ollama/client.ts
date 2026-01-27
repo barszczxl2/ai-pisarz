@@ -1,15 +1,31 @@
 /**
- * Ollama Cloud Vision API Client
+ * Vision API Client (Ollama Cloud + OpenRouter)
  *
- * Wykorzystuje API kompatybilne z OpenAI do analizy obrazow gazetek
- * Modele: mistral-large-3 (vision), llava (alternatywa)
+ * Obsługuje wielu providerów do analizy obrazów gazetek:
+ * - Ollama Cloud (qwen3-vl, llava, minicpm-v)
+ * - OpenRouter (gemini-flash, claude-3.5-sonnet, gpt-4o)
  */
 
-const OLLAMA_API_URL = process.env.OLLAMA_API_URL || 'https://api.ollama.com/v1';
+// Provider configuration
+const OLLAMA_LOCAL_URL = 'http://localhost:11434/v1';
+const OLLAMA_CLOUD_URL = process.env.OLLAMA_API_URL || 'https://ollama.com/v1';
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY;
-const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'mistral-large-3';
+const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'qwen3-vl:8b';
 
-// Typy dla produktow wyciagnietych z gazetki
+const OPENROUTER_API_URL = process.env.OPENROUTER_API_URL || 'https://openrouter.ai/api/v1';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+
+// Typy dla providerów
+export type VisionProvider = 'ollama' | 'ollama-cloud' | 'openrouter';
+
+/**
+ * Sprawdza czy model jest cloud (ma suffix -cloud)
+ */
+function isCloudModel(modelId: string): boolean {
+  return modelId.includes('-cloud');
+}
+
+// Typy dla produktów wyciągniętych z gazetki
 export interface ExtractedProduct {
   name: string;
   brand?: string | null;
@@ -19,6 +35,7 @@ export interface ExtractedProduct {
   unit?: string | null;
   category?: string | null;
   confidence?: number;
+  bbox?: [number, number, number, number] | null;
 }
 
 export interface OCRResult {
@@ -26,9 +43,12 @@ export interface OCRResult {
   page_number?: number;
   raw_response?: string;
   processing_time_ms?: number;
+  source_image_url?: string;
+  model_used?: string;
+  provider_used?: VisionProvider;
 }
 
-// Prompt do ekstrakcji produktow z gazetki - zoptymalizowany dla polskich gazetek
+// Prompt do ekstrakcji produktów z gazetki
 const EXTRACTION_PROMPT = `Jestes ekspertem od analizy polskich gazetek promocyjnych. Przeanalizuj DOKLADNIE ten obraz gazetki.
 
 ZADANIE: Wypisz KAZDY produkt widoczny na obrazku. Zwroc szczegolna uwage na:
@@ -79,9 +99,198 @@ WAZNE:
 
 Odpowiedz TYLKO JSON, bez zadnego tekstu przed ani po.`;
 
+// Prompt do ekstrakcji bounding boxów
+const BBOX_EXTRACTION_PROMPT = `Przeanalizuj obraz gazetki i dla KAZDEGO widocznego produktu podaj jego lokalizacje.
+
+Zwroc JSON z lista produktow i ich bounding boxami:
+{
+  "products": [
+    {"name": "nazwa produktu", "bbox": [x1, y1, x2, y2]}
+  ]
+}
+
+bbox = [lewy_gorny_x, lewy_gorny_y, prawy_dolny_x, prawy_dolny_y] w pikselach
+Prostokat powinien obejmowac: obrazek produktu, nazwe i cene.
+
+Odpowiedz TYLKO JSON.`;
+
+export interface BboxResult {
+  name: string;
+  bbox: [number, number, number, number];
+}
+
 /**
- * Wyciaga wszystkie URL obrazkow stron ze strony Blix.pl
- * Zwraca tablice URL w najwyzszej rozdzielczosci
+ * Pobiera konfigurację dla danego providera i modelu
+ */
+function getProviderConfig(provider: VisionProvider, model?: string): { apiUrl: string; apiKey: string | undefined; needsAuth: boolean } {
+  if (provider === 'openrouter') {
+    return {
+      apiUrl: OPENROUTER_API_URL,
+      apiKey: OPENROUTER_API_KEY,
+      needsAuth: true,
+    };
+  }
+
+  // Ollama - sprawdź czy model jest cloud czy lokalny
+  const isCloud = model ? isCloudModel(model) : false;
+
+  if (isCloud) {
+    return {
+      apiUrl: OLLAMA_CLOUD_URL,
+      apiKey: OLLAMA_API_KEY,
+      needsAuth: true,
+    };
+  }
+
+  // Lokalny Ollama - nie wymaga auth
+  return {
+    apiUrl: OLLAMA_LOCAL_URL,
+    apiKey: undefined,
+    needsAuth: false,
+  };
+}
+
+/**
+ * Sprawdza czy provider jest skonfigurowany
+ */
+export function isProviderConfigured(provider: VisionProvider): boolean {
+  if (provider === 'openrouter') {
+    return !!OPENROUTER_API_KEY;
+  }
+  if (provider === 'ollama-cloud') {
+    return !!OLLAMA_API_KEY;
+  }
+  // Lokalny Ollama - zawsze dostępny (jeśli uruchomiony)
+  return true;
+}
+
+
+/**
+ * Wywołuje API vision dla danego providera
+ */
+async function callVisionAPI(
+  provider: VisionProvider,
+  model: string,
+  prompt: string,
+  imageDataUrl: string
+): Promise<string> {
+  const config = getProviderConfig(provider, model);
+
+  // Sprawdź czy potrzebna jest autoryzacja
+  if (config.needsAuth && !config.apiKey) {
+    throw new Error(`${provider.toUpperCase()} API key is not configured`);
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  // Dodaj autoryzację tylko jeśli potrzebna
+  if (config.needsAuth && config.apiKey) {
+    headers['Authorization'] = `Bearer ${config.apiKey}`;
+  }
+
+  // OpenRouter wymaga dodatkowych nagłówków
+  if (provider === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://ai-pisarz.local';
+    headers['X-Title'] = 'AI Pisarz OCR';
+  }
+
+  const isCloud = isCloudModel(model);
+  console.log(`Calling ${isCloud ? 'Ollama Cloud' : 'Ollama Local'} API: ${config.apiUrl} with model: ${model}`);
+
+  const response = await fetch(`${config.apiUrl}/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'image_url',
+              image_url: { url: imageDataUrl }
+            }
+          ]
+        }
+      ],
+      max_tokens: 4096,
+      temperature: 0.1,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.text();
+    console.error(`${provider} API error:`, response.status, errorData);
+    throw new Error(`${provider} API error: ${response.status} - ${errorData}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+/**
+ * Wyciąga bounding boxy produktów z obrazu
+ */
+export async function extractBoundingBoxes(
+  imageUrl: string,
+  options?: { provider?: VisionProvider; model?: string }
+): Promise<BboxResult[]> {
+  const provider = options?.provider || 'ollama';
+  const model = options?.model || (provider === 'ollama' ? OLLAMA_VISION_MODEL : 'google/gemini-flash-1.5');
+
+  try {
+    const { base64, mimeType } = await fetchImageAsBase64(imageUrl);
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+
+    const rawContent = await callVisionAPI(provider, model, BBOX_EXTRACTION_PROMPT, dataUrl);
+    return parseBboxFromResponse(rawContent);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('extractBoundingBoxes error:', message);
+    return [];
+  }
+}
+
+/**
+ * Parsuje bounding boxy z odpowiedzi modelu
+ */
+function parseBboxFromResponse(response: string): BboxResult[] {
+  try {
+    let cleanedResponse = response
+      .replace(/```json\s*/g, '')
+      .replace(/```\s*/g, '')
+      .trim();
+
+    const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return [];
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed.products || !Array.isArray(parsed.products)) return [];
+
+    return parsed.products
+      .filter((p: { name?: string; bbox?: unknown[] }) =>
+        p.name && p.bbox && Array.isArray(p.bbox) && p.bbox.length === 4
+      )
+      .map((p: { name: string; bbox: number[] }) => ({
+        name: p.name,
+        bbox: [
+          Math.round(p.bbox[0]),
+          Math.round(p.bbox[1]),
+          Math.round(p.bbox[2]),
+          Math.round(p.bbox[3]),
+        ] as [number, number, number, number],
+      }));
+  } catch (error) {
+    console.error('Failed to parse bbox JSON:', error);
+    return [];
+  }
+}
+
+/**
+ * Wyciąga wszystkie URL obrazków stron ze strony Blix.pl
  */
 async function extractAllImageUrlsFromBlixPage(pageUrl: string): Promise<string[]> {
   console.log('Fetching Blix page:', pageUrl);
@@ -93,7 +302,6 @@ async function extractAllImageUrlsFromBlixPage(pageUrl: string): Promise<string[
 
   const html = await response.text();
 
-  // Szukaj URL obrazkow w najwyzszej rozdzielczosci (bucket=3000)
   const imagePattern = /https:\/\/imgproxy\.blix\.pl\/image\/leaflet\/\d+\/[a-f0-9]+\.jpg\?ext=webp&(?:amp;)?bucket=3000/g;
   const uniqueUrls = new Set<string>();
 
@@ -113,13 +321,10 @@ async function extractAllImageUrlsFromBlixPage(pageUrl: string): Promise<string[
 }
 
 /**
- * Wyciaga URL obrazka ze strony Blix.pl dla konkretnej strony
- * Np. https://blix.pl/sklep/biedronka/gazetka/473157/ -> https://imgproxy.blix.pl/image/leaflet/473157/...
+ * Wyciąga URL obrazka ze strony Blix.pl dla konkretnej strony
  */
 async function extractImageUrlFromBlixPage(pageUrl: string, pageNumber: number = 1): Promise<string> {
   const allUrls = await extractAllImageUrlsFromBlixPage(pageUrl);
-
-  // Strony sa numerowane od 1
   const pageIndex = Math.max(0, Math.min(pageNumber - 1, allUrls.length - 1));
   const selectedUrl = allUrls[pageIndex];
 
@@ -128,7 +333,7 @@ async function extractImageUrlFromBlixPage(pageUrl: string, pageNumber: number =
 }
 
 /**
- * Sprawdza czy URL to strona Blix czy bezposredni obrazek
+ * Sprawdza czy URL to strona Blix czy bezpośredni obrazek
  */
 function isBlixPageUrl(url: string): boolean {
   return url.includes('blix.pl/sklep/') && url.includes('/gazetka/');
@@ -146,7 +351,6 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; m
 
   const contentType = response.headers.get('content-type') || 'image/jpeg';
 
-  // Sprawdz czy to rzeczywiscie obrazek
   if (!contentType.startsWith('image/')) {
     throw new Error(
       `URL nie prowadzi do obrazka (otrzymano: ${contentType}). ` +
@@ -162,17 +366,25 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; m
 }
 
 /**
- * Analizuje obrazek gazetki i zwraca liste produktow
+ * Analizuje obrazek gazetki i zwraca listę produktów
  */
-export async function extractProducts(imageUrl: string, pageNumber?: number): Promise<OCRResult> {
-  if (!OLLAMA_API_KEY) {
-    throw new Error('OLLAMA_API_KEY is not configured');
-  }
+export async function extractProducts(
+  imageUrl: string,
+  pageNumber?: number,
+  options?: { provider?: VisionProvider; model?: string }
+): Promise<OCRResult> {
+  const provider = options?.provider || 'ollama';
+  // Use provided model if it's a non-empty string, otherwise fallback to default
+  const model = (options?.model && options.model.trim() !== '')
+    ? options.model
+    : (provider === 'ollama' ? OLLAMA_VISION_MODEL : 'google/gemini-flash-1.5');
+
+  console.log(`OCR using model: ${model} (provider: ${provider})`);
 
   const startTime = Date.now();
 
   try {
-    // Jesli to strona Blix, wyciagnij URL obrazka
+    // Jeśli to strona Blix, wyciągnij URL obrazka
     let actualImageUrl = imageUrl;
     if (isBlixPageUrl(imageUrl)) {
       console.log('Detected Blix page URL, extracting image...');
@@ -184,47 +396,13 @@ export async function extractProducts(imageUrl: string, pageNumber?: number): Pr
     const { base64, mimeType } = await fetchImageAsBase64(actualImageUrl);
     console.log('Image fetched, size:', base64.length, 'mime:', mimeType);
 
-    // Stworz data URL
     const dataUrl = `data:${mimeType};base64,${base64}`;
 
-    const response = await fetch(`${OLLAMA_API_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OLLAMA_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: OLLAMA_VISION_MODEL,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: EXTRACTION_PROMPT },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: dataUrl,
-                }
-              }
-            ]
-          }
-        ],
-        max_tokens: 4096,
-        temperature: 0.1, // Niska temperatura dla dokładniejszej ekstrakcji
-      }),
-    });
+    // Wywołaj API
+    console.log(`Calling ${provider} API with model: ${model}`);
+    const rawContent = await callVisionAPI(provider, model, EXTRACTION_PROMPT, dataUrl);
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('Ollama API error:', response.status, errorData);
-      throw new Error(`Ollama API error: ${response.status} - ${errorData}`);
-    }
-
-    const data = await response.json();
     const processingTime = Date.now() - startTime;
-
-    // Wyciagnij odpowiedz z formatu OpenAI-compatible
-    const rawContent = data.choices?.[0]?.message?.content || '';
 
     // Parsuj JSON z odpowiedzi
     const products = parseProductsFromResponse(rawContent);
@@ -234,6 +412,9 @@ export async function extractProducts(imageUrl: string, pageNumber?: number): Pr
       page_number: pageNumber,
       raw_response: rawContent,
       processing_time_ms: processingTime,
+      source_image_url: actualImageUrl,
+      model_used: model,
+      provider_used: provider,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -247,13 +428,11 @@ export async function extractProducts(imageUrl: string, pageNumber?: number): Pr
  */
 function parseProductsFromResponse(response: string): ExtractedProduct[] {
   try {
-    // Usun ewentualne markdown code blocks
     let cleanedResponse = response
       .replace(/```json\s*/g, '')
       .replace(/```\s*/g, '')
       .trim();
 
-    // Sprobuj znalezc obiekt JSON
     const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.warn('No JSON object found in response');
@@ -267,7 +446,6 @@ function parseProductsFromResponse(response: string): ExtractedProduct[] {
       return [];
     }
 
-    // Waliduj i normalizuj produkty
     return parsed.products
       .map((p: unknown) => normalizeProduct(p))
       .filter((p: ExtractedProduct | null): p is ExtractedProduct => p !== null);
@@ -288,20 +466,19 @@ function normalizeProduct(raw: unknown): ExtractedProduct | null {
 
   const p = raw as Record<string, unknown>;
 
-  // Nazwa produktu jest wymagana
   if (!p.name || typeof p.name !== 'string') {
     return null;
   }
 
-  // Normalizuj cene
   const price = parsePrice(p.price);
   const originalPrice = parsePrice(p.original_price);
 
-  // Oblicz procent znizki jesli nie podany
   let discountPercent = typeof p.discount_percent === 'number' ? p.discount_percent : null;
   if (!discountPercent && price !== null && originalPrice !== null && originalPrice > price) {
     discountPercent = Math.round(((originalPrice - price) / originalPrice) * 100);
   }
+
+  const bbox = parseBbox(p.bbox);
 
   return {
     name: cleanProductName(p.name as string),
@@ -312,12 +489,28 @@ function normalizeProduct(raw: unknown): ExtractedProduct | null {
     unit: typeof p.unit === 'string' ? p.unit : null,
     category: normalizeCategory(p.category),
     confidence: typeof p.confidence === 'number' ? p.confidence : undefined,
+    bbox,
   };
 }
 
-/**
- * Parsuje cene z róznych formatow
- */
+function parseBbox(value: unknown): [number, number, number, number] | null {
+  if (!value) return null;
+
+  if (Array.isArray(value) && value.length === 4) {
+    const [x1, y1, x2, y2] = value.map(v => {
+      if (typeof v === 'number') return Math.round(v);
+      if (typeof v === 'string') return Math.round(parseFloat(v));
+      return 0;
+    });
+
+    if (x1 >= 0 && y1 >= 0 && x2 > x1 && y2 > y1) {
+      return [x1, y1, x2, y2];
+    }
+  }
+
+  return null;
+}
+
 function parsePrice(value: unknown): number | null {
   if (value === null || value === undefined) {
     return null;
@@ -328,7 +521,6 @@ function parsePrice(value: unknown): number | null {
   }
 
   if (typeof value === 'string') {
-    // Usun znaki walutowe i zamien przecinek na kropke
     const cleaned = value
       .replace(/[zł$€]/gi, '')
       .replace(',', '.')
@@ -341,9 +533,6 @@ function parsePrice(value: unknown): number | null {
   return null;
 }
 
-/**
- * Czysci nazwe produktu
- */
 function cleanProductName(name: string): string {
   return name
     .replace(/\s+/g, ' ')
@@ -352,9 +541,6 @@ function cleanProductName(name: string): string {
     .trim();
 }
 
-/**
- * Normalizuje kategorie do dozwolonych wartosci
- */
 function normalizeCategory(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
@@ -382,12 +568,14 @@ function normalizeCategory(value: unknown): string | null {
 }
 
 /**
- * Analizuje wiele stron gazetki jednoczesnie
+ * Analizuje wiele stron gazetki jednocześnie
  */
 export async function analyzeFlyer(
   imageUrls: string[],
   options?: {
-    delayBetweenRequests?: number; // ms delay to avoid rate limits
+    delayBetweenRequests?: number;
+    provider?: VisionProvider;
+    model?: string;
   }
 ): Promise<OCRResult[]> {
   const delay = options?.delayBetweenRequests || 500;
@@ -399,7 +587,10 @@ export async function analyzeFlyer(
     }
 
     try {
-      const result = await extractProducts(imageUrls[i], i + 1);
+      const result = await extractProducts(imageUrls[i], i + 1, {
+        provider: options?.provider,
+        model: options?.model,
+      });
       results.push(result);
     } catch (error) {
       console.error(`Failed to process page ${i + 1}:`, error);
@@ -415,45 +606,53 @@ export async function analyzeFlyer(
 }
 
 /**
- * Testuje polaczenie z Ollama API
+ * Testuje połączenie z API
  */
-export async function testConnection(): Promise<{
+export async function testConnection(provider?: VisionProvider): Promise<{
   success: boolean;
   model: string;
+  provider: VisionProvider;
   error?: string;
 }> {
-  if (!OLLAMA_API_KEY) {
+  const p = provider || 'ollama';
+  const config = getProviderConfig(p);
+  const model = p === 'ollama' ? OLLAMA_VISION_MODEL : 'google/gemini-flash-1.5';
+
+  if (!config.apiKey) {
     return {
       success: false,
-      model: OLLAMA_VISION_MODEL,
-      error: 'OLLAMA_API_KEY is not configured',
+      model,
+      provider: p,
+      error: `${p.toUpperCase()} API key is not configured`,
     };
   }
 
   try {
-    // Prosty test - sprawdz czy API odpowiada
-    const response = await fetch(`${OLLAMA_API_URL}/models`, {
+    const response = await fetch(`${config.apiUrl}/models`, {
       headers: {
-        'Authorization': `Bearer ${OLLAMA_API_KEY}`,
+        'Authorization': `Bearer ${config.apiKey}`,
       },
     });
 
     if (!response.ok) {
       return {
         success: false,
-        model: OLLAMA_VISION_MODEL,
+        model,
+        provider: p,
         error: `API returned ${response.status}`,
       };
     }
 
     return {
       success: true,
-      model: OLLAMA_VISION_MODEL,
+      model,
+      provider: p,
     };
   } catch (error) {
     return {
       success: false,
-      model: OLLAMA_VISION_MODEL,
+      model,
+      provider: p,
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
@@ -479,7 +678,9 @@ export async function getBlixFlyerInfo(pageUrl: string): Promise<{ pageCount: nu
  */
 export const ollamaClient = {
   extractProducts,
+  extractBoundingBoxes,
   analyzeFlyer,
   testConnection,
   getBlixFlyerInfo,
+  isProviderConfigured,
 };

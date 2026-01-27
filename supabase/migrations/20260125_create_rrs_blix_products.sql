@@ -2,26 +2,7 @@
 -- Run this migration in Supabase SQL Editor
 
 -- Enable pgvector extension if not already enabled
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- Create the products table
-CREATE TABLE IF NOT EXISTS rrs_blix_products (
-  id SERIAL PRIMARY KEY,
-  gazetka_id INTEGER REFERENCES rrs_blix_gazetki(id) ON DELETE CASCADE,
-  page_number INTEGER,
-  product_name TEXT NOT NULL,
-  brand TEXT,
-  price DECIMAL(10,2),
-  original_price DECIMAL(10,2),  -- cena przed promocja
-  discount_percent INTEGER,
-  unit TEXT,  -- kg, szt, l, g, ml, etc.
-  category TEXT,  -- nabial, mieso, pieczywo, owoce_warzywa, napoje, slodycze, chemia, kosmetyki, inne
-  image_url TEXT,  -- URL do obrazka produktu jesli dostepny
-  ocr_confidence FLOAT DEFAULT 0.8,  -- pewnosc rozpoznania OCR (0-1)
-  embedding vector(1024),  -- Jina AI embedding dla wyszukiwania semantycznego
-  embedding_text TEXT,  -- tekst uzyty do embeddingu
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+tabela gotowa
 
 -- Add indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_blix_products_gazetka_id ON rrs_blix_products(gazetka_id);

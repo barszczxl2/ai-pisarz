@@ -78,6 +78,12 @@ export interface BlixProduct {
   embedding: string | null;
   embedding_text: string | null;
   created_at: string;
+  // Bounding box coordinates
+  bbox_x1: number | null;
+  bbox_y1: number | null;
+  bbox_x2: number | null;
+  bbox_y2: number | null;
+  cropped_image_url: string | null;
 }
 
 // OCR result from Vision API
@@ -90,6 +96,8 @@ export interface OCRExtractedProduct {
   unit?: string | null;
   category?: string | null;
   confidence?: number;
+  bbox?: [number, number, number, number] | null; // [x1, y1, x2, y2] bounding box w pikselach
+  cropped_image_url?: string | null; // URL do wyciętego obrazka w Supabase Storage
 }
 
 export interface OCRApiResponse {
@@ -97,10 +105,12 @@ export interface OCRApiResponse {
   products: OCRExtractedProduct[];
   productCount: number;
   pageNumber: number;
+  totalPages?: number;
   processingTimeMs?: number;
   savedToDatabase: boolean;
   savedCount?: number;
   saveError?: string;
+  sourceImageUrl?: string; // URL źródłowego obrazu (do wycinania)
 }
 
 // Product categories for OCR

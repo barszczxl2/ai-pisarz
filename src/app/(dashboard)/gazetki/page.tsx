@@ -16,14 +16,50 @@ import {
   X,
   CheckCircle,
   Tag,
+  Crop,
+  Grid3X3,
+  Table,
+  Package,
+  Cpu,
+  ChevronDown,
 } from 'lucide-react';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { ProductSearchResult, OCRExtractedProduct, PRODUCT_CATEGORY_LABELS, ProductCategory } from '@/types/database';
+import { ProductCard, ProductGrid } from '@/components/gazetki/ProductCard';
+import { CropEditor } from '@/components/gazetki/CropEditor';
 
 interface GazetkaStats {
   total: number;
   withEmbeddings: number;
   stores: string[];
+}
+
+interface OllamaModel {
+  id: string;
+  name: string;
+  size: string;
+  isCloud: boolean;
+  isVision: boolean;
+}
+
+interface OpenRouterModel {
+  id: string;
+  name: string;
+  description: string;
+}
+
+interface ModelsData {
+  ollama: {
+    configured: boolean;
+    all: OllamaModel[];
+    vision: OllamaModel[];
+    local: OllamaModel[];
+    cloud: OllamaModel[];
+  };
+  openrouter: {
+    configured: boolean;
+    models: OpenRouterModel[];
+  };
 }
 
 interface OCRState {
@@ -35,6 +71,27 @@ interface OCRState {
   error: string | null;
   processingTime: number | null;
   showModal: boolean;
+  sourceImageUrl: string | null;     // URL obrazu zrodlowego (do wycinania)
+  isCropping: boolean;               // Czy trwa wycinanie obrazkow
+  croppedProducts: Map<number, string>; // index -> cropped image URL
+  viewMode: 'grid' | 'table';        // Tryb wyswietlania wynikow
+  selectedModel: string;             // Wybrany model OCR
+  modelUsed: string | null;          // Model uzyty do ostatniego skanowania
+  providerUsed: string | null;       // Provider uzyty do ostatniego skanowania
+  // Progress tracking
+  ocrProgress: number;               // 0-100 progress OCR
+  ocrStage: string;                  // Aktualny etap OCR
+  cropProgress: number;              // 0-100 progress wycinania
+  cropStage: string;                 // Aktualny etap wycinania
+  croppedCount: number;              // Ile juz wycieto
+  totalToCrop: number;               // Ile do wyciecia
+}
+
+interface CropEditorState {
+  isOpen: boolean;
+  productIndex: number;
+  productName: string;
+  sourceImageUrl: string;
 }
 
 export default function GazetkiPage() {
@@ -49,6 +106,10 @@ export default function GazetkiPage() {
   const [stats, setStats] = useState<GazetkaStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
 
+  // Vision models state
+  const [modelsData, setModelsData] = useState<ModelsData | null>(null);
+  const [loadingModels, setLoadingModels] = useState(true);
+
   // OCR state
   const [ocr, setOcr] = useState<OCRState>({
     isScanning: false,
@@ -59,7 +120,51 @@ export default function GazetkiPage() {
     error: null,
     processingTime: null,
     showModal: false,
+    sourceImageUrl: null,
+    isCropping: false,
+    croppedProducts: new Map(),
+    viewMode: 'grid',
+    selectedModel: '',
+    modelUsed: null,
+    providerUsed: null,
+    ocrProgress: 0,
+    ocrStage: '',
+    cropProgress: 0,
+    cropStage: '',
+    croppedCount: 0,
+    totalToCrop: 0,
   });
+
+  // CropEditor state
+  const [cropEditor, setCropEditor] = useState<CropEditorState>({
+    isOpen: false,
+    productIndex: 0,
+    productName: '',
+    sourceImageUrl: '',
+  });
+
+  // Load available models on mount
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const response = await fetch('/api/ocr-models');
+        if (response.ok) {
+          const data = await response.json();
+          setModelsData(data.models || null);
+          // Set default model
+          if (data.defaultModel) {
+            setOcr(prev => ({ ...prev, selectedModel: data.defaultModel }));
+          }
+        }
+      } catch (err) {
+        console.error('Error loading OCR models:', err);
+      } finally {
+        setLoadingModels(false);
+      }
+    };
+
+    loadModels();
+  }, []);
 
   // Load stats on mount
   useEffect(() => {
@@ -157,11 +262,123 @@ export default function GazetkiPage() {
     [handleSearch]
   );
 
+  // Funkcja do wycinania obrazkow produktow (dwuetapowa: bbox + crop)
+  const cropProductImages = useCallback(async (
+    sourceImageUrl: string,
+    productCount: number,
+    pageNumber: number
+  ) => {
+    if (productCount === 0) {
+      console.log('No products to crop');
+      return;
+    }
+
+    setOcr(prev => ({
+      ...prev,
+      isCropping: true,
+      cropProgress: 0,
+      cropStage: 'Wykrywanie pozycji produktow...',
+      totalToCrop: productCount,
+      croppedCount: 0,
+    }));
+
+    try {
+      // ETAP 1: Ekstrakcja bounding boxow (0-40%)
+      setOcr(prev => ({ ...prev, cropProgress: 10, cropStage: 'Wysylanie do AI (bounding boxes)...' }));
+
+      const bboxResponse = await fetch('/api/extract-bbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: sourceImageUrl }),
+      });
+
+      setOcr(prev => ({ ...prev, cropProgress: 30, cropStage: 'Przetwarzanie pozycji...' }));
+
+      if (!bboxResponse.ok) {
+        console.error('Bbox extraction failed:', bboxResponse.status);
+        setOcr(prev => ({ ...prev, isCropping: false, cropProgress: 0, cropStage: 'Blad wykrywania pozycji' }));
+        return;
+      }
+
+      const bboxData = await bboxResponse.json();
+      const bboxes = bboxData.bboxes || [];
+
+      if (bboxes.length === 0) {
+        console.log('No bounding boxes extracted');
+        setOcr(prev => ({ ...prev, isCropping: false, cropProgress: 0, cropStage: 'Nie wykryto pozycji produktow' }));
+        return;
+      }
+
+      setOcr(prev => ({
+        ...prev,
+        cropProgress: 40,
+        cropStage: `Wykryto ${bboxes.length} produktow, wycinanie...`,
+        totalToCrop: bboxes.length,
+      }));
+
+      // ETAP 2: Wycinanie obrazkow (40-100%)
+      const cropResponse = await fetch('/api/crop-products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: sourceImageUrl,
+          products: bboxes.map((b: { name: string; bbox: number[] }, index: number) => ({
+            id: `product_${index}`,
+            bbox: b.bbox,
+          })),
+          pageNumber,
+        }),
+      });
+
+      setOcr(prev => ({ ...prev, cropProgress: 80, cropStage: 'Przetwarzanie obrazkow...' }));
+
+      if (!cropResponse.ok) {
+        console.error('Crop API error:', cropResponse.status);
+        setOcr(prev => ({ ...prev, isCropping: false, cropProgress: 0, cropStage: 'Blad wycinania' }));
+        return;
+      }
+
+      const cropData = await cropResponse.json();
+
+      if (cropData.croppedImages && cropData.croppedImages.length > 0) {
+        const croppedMap = new Map<number, string>();
+        for (const img of cropData.croppedImages) {
+          const indexMatch = img.id.match(/product_(\d+)/);
+          if (indexMatch) {
+            const index = parseInt(indexMatch[1], 10);
+            croppedMap.set(index, img.imageUrl);
+          }
+        }
+
+        setOcr(prev => ({
+          ...prev,
+          croppedProducts: croppedMap,
+          cropProgress: 100,
+          cropStage: `Wycieto ${croppedMap.size} obrazkow`,
+          croppedCount: croppedMap.size,
+          isCropping: false,
+        }));
+
+        console.log(`Cropped ${croppedMap.size} product images`);
+      } else {
+        setOcr(prev => ({ ...prev, isCropping: false, cropProgress: 100, cropStage: 'Brak obrazkow do wyciecia' }));
+      }
+    } catch (err) {
+      console.error('Error in crop pipeline:', err);
+      setOcr(prev => ({ ...prev, isCropping: false, cropProgress: 0, cropStage: 'Blad wycinania' }));
+    }
+  }, []);
+
   // OCR scan handler - accepts optional URL and page number for direct scanning
   const handleOcrScan = useCallback(async (directUrl?: string, pageNum?: number) => {
     const urlToScan = directUrl || ocr.imageUrl.trim();
     const pageToScan = pageNum || ocr.pageNumber;
     if (!urlToScan) return;
+
+    // Determine provider based on selected model
+    const isOpenRouter = ocr.selectedModel.includes('/'); // OpenRouter models have format "provider/model"
+    const provider = isOpenRouter ? 'openrouter' : 'ollama';
+    const model = ocr.selectedModel || undefined;
 
     setOcr(prev => ({
       ...prev,
@@ -171,9 +388,25 @@ export default function GazetkiPage() {
       error: null,
       results: [],
       processingTime: null,
+      sourceImageUrl: null,
+      croppedProducts: new Map(),
+      modelUsed: null,
+      providerUsed: null,
+      ocrProgress: 0,
+      ocrStage: 'Pobieranie strony gazetki...',
+      cropProgress: 0,
+      cropStage: '',
+      croppedCount: 0,
+      totalToCrop: 0,
     }));
 
     try {
+      // Stage 1: Fetching
+      setOcr(prev => ({ ...prev, ocrProgress: 10, ocrStage: 'Pobieranie obrazu...' }));
+
+      // Stage 2: Sending to API
+      setOcr(prev => ({ ...prev, ocrProgress: 30, ocrStage: 'Wysylanie do modelu AI...' }));
+
       const response = await fetch('/api/ocr-gazetka', {
         method: 'POST',
         headers: {
@@ -183,8 +416,13 @@ export default function GazetkiPage() {
           imageUrl: urlToScan,
           pageNumber: pageToScan,
           saveToDatabase: false,
+          provider,
+          model,
         }),
       });
+
+      // Stage 3: Processing response
+      setOcr(prev => ({ ...prev, ocrProgress: 80, ocrStage: 'Przetwarzanie wynikow...' }));
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -192,32 +430,92 @@ export default function GazetkiPage() {
       }
 
       const data = await response.json();
+      const products = data.products || [];
+      const sourceUrl = data.sourceImageUrl || null;
+
+      // Stage 4: Done
       setOcr(prev => ({
         ...prev,
-        results: data.products || [],
+        results: products,
         totalPages: data.totalPages || null,
         processingTime: data.processingTimeMs || null,
+        sourceImageUrl: sourceUrl,
         showModal: true,
+        isScanning: false,
+        modelUsed: data.modelUsed || null,
+        providerUsed: data.providerUsed || null,
+        ocrProgress: 100,
+        ocrStage: `Znaleziono ${products.length} produktow`,
       }));
+
+      // Automatyczne wycinanie obrazkow produktow
+      if (sourceUrl && products.length > 0) {
+        cropProductImages(sourceUrl, products.length, pageToScan);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Nieznany blad';
       setOcr(prev => ({
         ...prev,
         error: message,
-      }));
-    } finally {
-      setOcr(prev => ({
-        ...prev,
         isScanning: false,
+        ocrProgress: 0,
+        ocrStage: '',
       }));
     }
-  }, [ocr.imageUrl, ocr.pageNumber]);
+  }, [ocr.imageUrl, ocr.pageNumber, ocr.selectedModel, cropProductImages]);
 
   // Close OCR modal
   const closeOcrModal = useCallback(() => {
     setOcr(prev => ({
       ...prev,
       showModal: false,
+    }));
+  }, []);
+
+  // Otworz CropEditor dla produktu
+  const handleOpenCropEditor = useCallback((index: number) => {
+    if (!ocr.sourceImageUrl) {
+      console.error('No source image URL available');
+      return;
+    }
+
+    const product = ocr.results[index];
+    if (!product) {
+      console.error('Product not found at index:', index);
+      return;
+    }
+
+    setCropEditor({
+      isOpen: true,
+      productIndex: index,
+      productName: product.name,
+      sourceImageUrl: ocr.sourceImageUrl,
+    });
+  }, [ocr.sourceImageUrl, ocr.results]);
+
+  // Zamknij CropEditor
+  const handleCloseCropEditor = useCallback(() => {
+    setCropEditor(prev => ({
+      ...prev,
+      isOpen: false,
+    }));
+  }, []);
+
+  // Po zatwierdzeniu kadrowania - aktualizuj obrazek produktu
+  const handleCropComplete = useCallback((productIndex: number, croppedImageUrl: string) => {
+    setOcr(prev => {
+      const newCroppedProducts = new Map(prev.croppedProducts);
+      newCroppedProducts.set(productIndex, croppedImageUrl);
+      return {
+        ...prev,
+        croppedProducts: newCroppedProducts,
+      };
+    });
+
+    // Zamknij CropEditor
+    setCropEditor(prev => ({
+      ...prev,
+      isOpen: false,
     }));
   }, []);
 
@@ -417,6 +715,69 @@ export default function GazetkiPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
+            {/* Model selector */}
+            <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+              <div className="flex items-center gap-2 text-purple-700">
+                <Cpu className="h-4 w-4" />
+                <span className="text-sm font-medium">Model OCR:</span>
+              </div>
+              <div className="relative flex-1 max-w-lg">
+                <select
+                  value={ocr.selectedModel}
+                  onChange={(e) => setOcr(prev => ({ ...prev, selectedModel: e.target.value }))}
+                  disabled={ocr.isScanning || loadingModels}
+                  className="w-full px-3 py-2 pr-8 text-sm border border-purple-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loadingModels ? (
+                    <option>Ladowanie modeli...</option>
+                  ) : !modelsData ? (
+                    <option>Brak modeli (uruchom Ollama)</option>
+                  ) : (
+                    <>
+                      {/* Ollama Local */}
+                      {modelsData.ollama.local.filter(m => m.isVision).length > 0 && (
+                        <optgroup label="Ollama Lokalnie">
+                          {modelsData.ollama.local
+                            .filter(m => m.isVision)
+                            .map(model => (
+                              <option key={model.id} value={model.id}>
+                                {model.name} ({model.size})
+                              </option>
+                            ))}
+                        </optgroup>
+                      )}
+                      {/* Ollama Cloud */}
+                      {modelsData.ollama.cloud.length > 0 && (
+                        <optgroup label="Ollama Cloud">
+                          {modelsData.ollama.cloud.map(model => (
+                            <option key={model.id} value={model.id}>
+                              {model.name} {model.isVision ? '(vision)' : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {/* OpenRouter */}
+                      {modelsData.openrouter.configured && modelsData.openrouter.models.length > 0 && (
+                        <optgroup label="OpenRouter">
+                          {modelsData.openrouter.models.map(model => (
+                            <option key={model.id} value={model.id}>
+                              {model.name} - {model.description}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </>
+                  )}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-500 pointer-events-none" />
+              </div>
+              {modelsData && (
+                <Badge variant="outline" className="text-xs border-purple-300 text-purple-700">
+                  {modelsData.ollama.vision.length + (modelsData.openrouter.configured ? modelsData.openrouter.models.length : 0)} vision
+                </Badge>
+              )}
+            </div>
+
             {/* Image URL input */}
             <div className="flex gap-2">
               <div className="relative flex-1">
@@ -463,10 +824,18 @@ export default function GazetkiPage() {
               </Button>
             </div>
 
+            {/* OCR Status */}
+            {ocr.isScanning && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-purple-50 border border-purple-200 text-purple-700 text-sm">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Skanowanie strony {ocr.pageNumber}...</span>
+              </div>
+            )}
+
             {/* OCR Error message */}
             {ocr.error && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>{ocr.error}</span>
               </div>
             )}
@@ -483,7 +852,7 @@ export default function GazetkiPage() {
       {/* OCR Results Modal */}
       {ocr.showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <Card className="w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
             <CardHeader className="border-b flex-shrink-0">
               <div className="flex items-center justify-between">
                 <div>
@@ -498,9 +867,46 @@ export default function GazetkiPage() {
                         (czas: {(ocr.processingTime / 1000).toFixed(1)}s)
                       </span>
                     )}
+                    {ocr.modelUsed && (
+                      <span className="ml-2 text-xs text-purple-600">
+                        <Cpu className="inline h-3 w-3 mr-1" />
+                        {ocr.modelUsed}
+                      </span>
+                    )}
+                    {ocr.isCropping && (
+                      <span className="ml-2 text-xs text-orange-600">
+                        <Loader2 className="inline h-3 w-3 mr-1 animate-spin" />
+                        Wycinanie obrazkow...
+                      </span>
+                    )}
+                    {ocr.croppedProducts.size > 0 && !ocr.isCropping && (
+                      <span className="ml-2 text-xs text-green-600">
+                        <Crop className="inline h-3 w-3 mr-1" />
+                        {ocr.croppedProducts.size} obrazkow wyciętych
+                      </span>
+                    )}
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* View mode toggle */}
+                  <div className="flex items-center border rounded-lg overflow-hidden mr-2">
+                    <Button
+                      variant={ocr.viewMode === 'grid' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setOcr(prev => ({ ...prev, viewMode: 'grid' }))}
+                      className={`h-8 px-3 rounded-none ${ocr.viewMode === 'grid' ? 'bg-purple-600' : ''}`}
+                    >
+                      <Grid3X3 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant={ocr.viewMode === 'table' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setOcr(prev => ({ ...prev, viewMode: 'table' }))}
+                      className={`h-8 px-3 rounded-none ${ocr.viewMode === 'table' ? 'bg-purple-600' : ''}`}
+                    >
+                      <Table className="h-4 w-4" />
+                    </Button>
+                  </div>
                   {/* Page navigation */}
                   {ocr.totalPages && ocr.totalPages > 1 && (
                     <div className="flex items-center gap-1 mr-2">
@@ -538,7 +944,7 @@ export default function GazetkiPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="overflow-y-auto flex-1 p-0">
+            <CardContent className="overflow-y-auto flex-1 p-4">
               {ocr.isScanning ? (
                 <div className="p-8 text-center text-slate-500">
                   <Loader2 className="h-12 w-12 mx-auto mb-4 text-purple-500 animate-spin" />
@@ -551,75 +957,137 @@ export default function GazetkiPage() {
                   <p>Nie znaleziono produktow na tej stronie.</p>
                   <p className="text-sm mt-2">Sprobuj inna strone gazetki - uzyj strzalek powyzej.</p>
                 </div>
+              ) : ocr.viewMode === 'grid' ? (
+                /* Grid view with ProductCards */
+                <ProductGrid columns={4}>
+                  {ocr.results.map((product, index) => (
+                    <ProductCard
+                      key={index}
+                      imageUrl={ocr.croppedProducts.get(index) || product.cropped_image_url || null}
+                      name={product.name}
+                      brand={product.brand}
+                      price={product.price}
+                      originalPrice={product.original_price}
+                      discountPercent={product.discount_percent}
+                      unit={product.unit}
+                      category={product.category}
+                      isLoading={ocr.isCropping && product.bbox != null}
+                      showCropButton={!!ocr.sourceImageUrl}
+                      onCropClick={() => handleOpenCropEditor(index)}
+                    />
+                  ))}
+                </ProductGrid>
               ) : (
-                <table className="w-full">
-                  <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                        Produkt
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                        Marka
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                        Cena
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                        Cena przed
-                      </th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                        Rabat
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                        Kategoria
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {ocr.results.map((product, index) => (
-                      <tr key={index} className="hover:bg-slate-50">
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-slate-900">{product.name}</div>
-                          {product.unit && (
-                            <div className="text-xs text-slate-500">{product.unit}</div>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-600">
-                          {product.brand || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <span className="font-bold text-green-700">
-                            {formatPrice(product.price)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right text-sm text-slate-500">
-                          {product.original_price ? (
-                            <span className="line-through">
-                              {formatPrice(product.original_price)}
-                            </span>
-                          ) : '-'}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {product.discount_percent ? (
-                            <Badge variant="secondary" className="bg-red-100 text-red-700">
-                              -{product.discount_percent}%
-                            </Badge>
-                          ) : '-'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge variant="outline" className="flex items-center gap-1 w-fit">
-                            <Tag className="h-3 w-3" />
-                            {getCategoryLabel(product.category || null)}
-                          </Badge>
-                        </td>
+                /* Table view */
+                <div className="overflow-x-auto -mx-4">
+                  <table className="w-full">
+                    <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                          Produkt
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                          Marka
+                        </th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                          Cena
+                        </th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                          Cena przed
+                        </th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                          Rabat
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                          Kategoria
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {ocr.results.map((product, index) => (
+                        <tr key={index} className="hover:bg-slate-50">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              {/* Mini thumbnail z przyciskiem kadrowania */}
+                              <div className="relative group">
+                                {ocr.croppedProducts.get(index) ? (
+                                  <img
+                                    src={ocr.croppedProducts.get(index)}
+                                    alt={product.name}
+                                    className="w-12 h-12 object-contain rounded border"
+                                  />
+                                ) : (
+                                  <div className="w-12 h-12 bg-slate-100 rounded border flex items-center justify-center">
+                                    <Package className="w-6 h-6 text-slate-300" />
+                                  </div>
+                                )}
+                                {/* Przycisk kadrowania przy hover */}
+                                {ocr.sourceImageUrl && (
+                                  <button
+                                    onClick={() => handleOpenCropEditor(index)}
+                                    className="absolute inset-0 bg-purple-600/80 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title="Kadruj"
+                                  >
+                                    <Crop className="w-4 h-4 text-white" />
+                                  </button>
+                                )}
+                              </div>
+                              <div>
+                                <div className="font-medium text-slate-900">{product.name}</div>
+                                {product.unit && (
+                                  <div className="text-xs text-slate-500">{product.unit}</div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-600">
+                            {product.brand || '-'}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className="font-bold text-green-700">
+                              {formatPrice(product.price)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm text-slate-500">
+                            {product.original_price ? (
+                              <span className="line-through">
+                                {formatPrice(product.original_price)}
+                              </span>
+                            ) : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {product.discount_percent ? (
+                              <Badge variant="secondary" className="bg-red-100 text-red-700">
+                                -{product.discount_percent}%
+                              </Badge>
+                            ) : '-'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant="outline" className="flex items-center gap-1 w-fit">
+                              <Tag className="h-3 w-3" />
+                              {getCategoryLabel(product.category || null)}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* CropEditor Modal */}
+      {cropEditor.isOpen && cropEditor.sourceImageUrl && (
+        <CropEditor
+          sourceImageUrl={cropEditor.sourceImageUrl}
+          productName={cropEditor.productName}
+          productIndex={cropEditor.productIndex}
+          onCropComplete={handleCropComplete}
+          onCancel={handleCloseCropEditor}
+        />
       )}
 
       {/* Results Table */}

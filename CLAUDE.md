@@ -154,15 +154,21 @@ OLLAMA_VISION_MODEL=qwen3-vl:235b-instruct  # Najlepsza dokładność OCR
 - **Automatyczne wykrycie URL Blix** - wklej link do gazetki, system pobierze obrazy
 - **Wybór strony** - selektor numeru strony z informacją o łącznej liczbie stron
 - **Nawigacja w modalu** - strzałki ← → do przeskakiwania między stronami
-- **Tabela wyników** - produkty z cenami, markami, rabatami i kategoriami
+- **Siatka kart produktów** - każdy produkt jako osobna karta z obrazkiem
+- **Wycinanie obrazków (crop)** - automatyczne wycinanie produktów z gazetki na podstawie bounding boxów
+- **Przełącznik widoku** - siatka kart lub tabela z miniaturkami
+- **Supabase Storage** - przechowywanie wyciętych obrazków produktów
 
 ### Pliki:
 | Plik | Opis |
 |------|------|
-| `src/lib/ollama/client.ts` | Klient Ollama Vision API |
+| `src/lib/ollama/client.ts` | Klient Ollama Vision API z bounding boxami |
 | `src/app/api/ocr-gazetka/route.ts` | API endpoint do OCR |
-| `src/app/(dashboard)/gazetki/page.tsx` | UI z przyciskiem "Skanuj gazetke" |
+| `src/app/api/crop-products/route.ts` | API endpoint do wycinania produktów (Sharp) |
+| `src/app/(dashboard)/gazetki/page.tsx` | UI z siatką kart produktów |
+| `src/components/gazetki/ProductCard.tsx` | Komponent karty produktu |
 | `supabase/migrations/20260125_create_rrs_blix_products.sql` | Migracja tabeli produktów |
+| `supabase/migrations/20260125_add_bbox_columns.sql` | Migracja kolumn bbox |
 
 ### API Endpoint: `/api/ocr-gazetka`
 
@@ -197,9 +203,11 @@ OLLAMA_VISION_MODEL=qwen3-vl:235b-instruct  # Najlepsza dokładność OCR
   price: number | null;
   original_price?: number | null;
   discount_percent?: number | null;
-  unit?: string | null;      // "1L", "500g", "1szt"
-  category?: string | null;  // nabial, mieso, pieczywo, etc.
+  unit?: string | null;         // "1L", "500g", "1szt"
+  category?: string | null;     // nabial, mieso, pieczywo, etc.
   confidence?: number;
+  bbox?: [number, number, number, number] | null;  // [x1, y1, x2, y2] bounding box
+  cropped_image_url?: string | null;  // URL wyciętego obrazka
 }
 ```
 
@@ -222,8 +230,48 @@ image_url        | text - URL obrazka produktu
 ocr_confidence   | float - pewność OCR (0-1)
 embedding        | vector(1024) - Jina AI embedding
 embedding_text   | text - tekst użyty do embeddingu
+bbox_x1          | integer - lewy górny X bounding boxa
+bbox_y1          | integer - lewy górny Y bounding boxa
+bbox_x2          | integer - prawy dolny X bounding boxa
+bbox_y2          | integer - prawy dolny Y bounding boxa
+cropped_image_url| text - URL wyciętego obrazka w Supabase Storage
 created_at       | timestamptz
 ```
+
+### API Endpoint: `/api/crop-products`
+
+**POST** - Wycina produkty z obrazu gazetki
+
+```typescript
+// Request
+{
+  imageUrl: string;       // URL obrazu źródłowego
+  products: [{
+    id: string;           // Identyfikator produktu
+    bbox: [x1, y1, x2, y2]; // Bounding box w pikselach
+  }];
+  gazetkaId?: number;
+  pageNumber?: number;
+}
+
+// Response
+{
+  success: boolean;
+  croppedImages: [{
+    id: string;
+    imageUrl: string;     // URL w Supabase Storage
+    width: number;
+    height: number;
+  }];
+  errors: [{id: string, error: string}];
+  processingTimeMs: number;
+}
+```
+
+**Technologie:**
+- **Sharp** - biblioteka do przetwarzania obrazów (server-side)
+- **Supabase Storage** - bucket `product-images` do przechowywania wyciętych obrazków
+- **Format:** WebP (85% quality) dla oszczędności miejsca
 
 ### Kategorie produktów:
 - `nabial` - Nabiał
@@ -239,6 +287,8 @@ created_at       | timestamptz
 ### Koszty:
 - Ollama Cloud Turbo: $20/mies. (flat rate z limitami)
 - Jina embedding (per produkt): ~$0.0001
+- Supabase Storage: ~$5/mies. (obrazki produktów)
+- Sharp: Open source (0$)
 
 ---
 
