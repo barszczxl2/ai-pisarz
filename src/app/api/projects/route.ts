@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createProjectSchema, validateRequest } from '@/lib/validations/api';
 
 export async function GET() {
   const supabase = await createServerSupabaseClient();
@@ -21,17 +22,20 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { keyword, language, ai_overview_content } = body;
 
-    if (!keyword) {
-      return NextResponse.json({ error: 'Keyword is required' }, { status: 400 });
+    // Walidacja danych wejściowych
+    const validation = validateRequest(createProjectSchema, body);
+    if (!validation.success) {
+      return validation.error;
     }
+
+    const { keyword, language, ai_overview_content } = validation.data;
 
     const { data, error } = await supabase
       .from('pisarz_projects')
       .insert({
         keyword,
-        language: language || 'Polish',
+        language,
         ai_overview_content: ai_overview_content || null,
         status: 'draft',
         current_stage: 0,
@@ -44,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(data);
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 }

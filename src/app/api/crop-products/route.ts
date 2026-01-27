@@ -18,6 +18,7 @@
 
 import { NextResponse } from 'next/server';
 import sharp from 'sharp';
+import { cropProductsSchema, validateRequest } from '@/lib/validations/api';
 
 // Konfiguracja
 const CROPPED_IMAGE_SIZE = 300; // Docelowy rozmiar w px (kwadrat)
@@ -132,23 +133,15 @@ export async function POST(request: Request) {
   const startTime = Date.now();
 
   try {
-    const body: CropRequest = await request.json();
-    const { imageUrl, products, gazetkaId, pageNumber } = body;
+    const body = await request.json();
 
-    // Walidacja
-    if (!imageUrl) {
-      return NextResponse.json(
-        { error: 'imageUrl is required' },
-        { status: 400 }
-      );
+    // Walidacja danych wejściowych
+    const validation = validateRequest(cropProductsSchema, body);
+    if (!validation.success) {
+      return validation.error;
     }
 
-    if (!products || !Array.isArray(products) || products.length === 0) {
-      return NextResponse.json(
-        { error: 'products array is required and must not be empty' },
-        { status: 400 }
-      );
-    }
+    const { imageUrl, products } = validation.data;
 
     // Pobierz obraz zrodlowy
     console.log('Fetching source image:', imageUrl);

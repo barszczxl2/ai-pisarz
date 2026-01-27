@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { createSafeHtml } from '@/lib/sanitize';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -63,9 +64,9 @@ export function ContentPreview({ sections, currentSectionIndex }: ContentPreview
                       </span>
                       <div
                         className="line-clamp-1"
-                        dangerouslySetInnerHTML={{
-                          __html: section.heading_html.replace(/<\/?h[2-3][^>]*>/gi, ''),
-                        }}
+                        dangerouslySetInnerHTML={
+                          createSafeHtml(section.heading_html.replace(/<\/?h[2-3][^>]*>/gi, ''))
+                        }
                       />
                     </CardTitle>
                     <Badge
@@ -81,7 +82,7 @@ export function ContentPreview({ sections, currentSectionIndex }: ContentPreview
                   <CardContent className="pt-0">
                     <div
                       className="prose prose-sm max-w-none line-clamp-3 text-slate-600"
-                      dangerouslySetInnerHTML={{ __html: section.content_html }}
+                      dangerouslySetInnerHTML={createSafeHtml(section.content_html)}
                     />
                   </CardContent>
                 )}
@@ -104,8 +105,8 @@ export function ContentFull({ sections }: { sections: ContentSection[] }) {
           .sort((a, b) => a.section_order - b.section_order)
           .map((section) => (
             <div key={section.id}>
-              <div dangerouslySetInnerHTML={{ __html: section.heading_html }} />
-              <div dangerouslySetInnerHTML={{ __html: section.content_html || '' }} />
+              <div dangerouslySetInnerHTML={createSafeHtml(section.heading_html)} />
+              <div dangerouslySetInnerHTML={createSafeHtml(section.content_html || '')} />
             </div>
           ))}
       </article>

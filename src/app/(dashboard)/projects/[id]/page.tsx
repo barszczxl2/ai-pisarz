@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { createSafeHtml } from '@/lib/sanitize';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -579,9 +580,9 @@ export default function ProjectDetailPage() {
               <p className="text-green-800 font-medium mb-2">Wybrane nagłówki:</p>
               <div
                 className="prose prose-sm max-w-none text-green-900"
-                dangerouslySetInnerHTML={{
-                  __html: headers.find(h => h.is_selected)?.headers_html || ''
-                }}
+                dangerouslySetInnerHTML={
+                  createSafeHtml(headers.find(h => h.is_selected)?.headers_html || '')
+                }
               />
             </div>
           )}
@@ -658,7 +659,7 @@ export default function ProjectDetailPage() {
             <ScrollArea className="h-[400px]">
               <div
                 className="prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: formatBriefHtml(brief.brief_html || '') }}
+                dangerouslySetInnerHTML={createSafeHtml(formatBriefHtml(brief.brief_html || ''))}
               />
             </ScrollArea>
           </CardContent>

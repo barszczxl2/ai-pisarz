@@ -7,6 +7,7 @@ import {
   VisionProvider,
   isProviderConfigured,
 } from '@/lib/ollama/client';
+import { ocrGazetkaSchema, validateRequest } from '@/lib/validations/api';
 
 /**
  * Generate embedding for product text using Jina AI
@@ -63,32 +64,21 @@ async function generateProductEmbedding(text: string): Promise<number[]> {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+
+    // Walidacja danych wejściowych
+    const validation = validateRequest(ocrGazetkaSchema, body);
+    if (!validation.success) {
+      return validation.error;
+    }
+
     const {
       imageUrl,
       gazetkaId,
-      pageNumber = 1,
-      saveToDatabase = false,
-      provider = 'ollama',
+      pageNumber,
+      saveToDatabase,
+      provider,
       model,
-    } = body;
-
-    // Validate input
-    if (!imageUrl || typeof imageUrl !== 'string') {
-      return NextResponse.json(
-        { error: 'imageUrl is required and must be a string' },
-        { status: 400 }
-      );
-    }
-
-    // Validate imageUrl format
-    try {
-      new URL(imageUrl);
-    } catch {
-      return NextResponse.json(
-        { error: 'imageUrl must be a valid URL' },
-        { status: 400 }
-      );
-    }
+    } = validation.data;
 
     // Validate provider
     const validProvider: VisionProvider = provider === 'openrouter' ? 'openrouter' : 'ollama';

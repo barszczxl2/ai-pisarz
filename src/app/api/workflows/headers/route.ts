@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getDifyClient } from '@/lib/dify/client';
+import { workflowProjectIdSchema, validateRequest } from '@/lib/validations/api';
 
 // Create Supabase client for API routes
 function getSupabase() {
@@ -14,11 +15,15 @@ export async function POST(request: NextRequest) {
   const supabase = getSupabase();
 
   try {
-    const { projectId } = await request.json();
+    const body = await request.json();
 
-    if (!projectId) {
-      return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
+    // Walidacja danych wejściowych
+    const validation = validateRequest(workflowProjectIdSchema, body);
+    if (!validation.success) {
+      return validation.error;
     }
+
+    const { projectId } = validation.data;
 
     if (!process.env.DIFY_HEADERS_WORKFLOW_KEY) {
       return NextResponse.json({ error: 'Dify API key not configured' }, { status: 500 });

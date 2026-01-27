@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { cosineSimilarity, parseEmbedding } from '@/lib/clustering';
 import { GazetkaProduct, ProductSearchResult } from '@/types/database';
+import { productSearchSchema, validateRequest } from '@/lib/validations/api';
 
 /**
  * Generate embedding for a query using Jina AI
@@ -50,14 +51,14 @@ async function generateEmbedding(text: string): Promise<number[]> {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { query, threshold = 0.15, limit = 30 } = body;
 
-    if (!query || typeof query !== 'string') {
-      return NextResponse.json(
-        { error: 'Wymagane jest zapytanie tekstowe' },
-        { status: 400 }
-      );
+    // Walidacja danych wejściowych
+    const validation = validateRequest(productSearchSchema, body);
+    if (!validation.success) {
+      return validation.error;
     }
+
+    const { query, threshold, limit } = validation.data;
 
     // Check for Jina AI API key
     if (!process.env.JINA_API_KEY) {

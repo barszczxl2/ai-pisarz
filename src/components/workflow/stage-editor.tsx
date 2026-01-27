@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { createSafeHtml } from '@/lib/sanitize';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -386,9 +387,9 @@ export function StageEditor({ projectId, currentStage, onDataChanged, isRunning 
                           <div className="mt-1 p-3 bg-white rounded border">
                             <div
                               className="prose prose-sm max-w-none"
-                              dangerouslySetInnerHTML={{
-                                __html: stageData.generatedHeaders?.find(h => h.is_selected)?.headers_html || 'Brak wybranych nagłówków'
-                              }}
+                              dangerouslySetInnerHTML={
+                                createSafeHtml(stageData.generatedHeaders?.find(h => h.is_selected)?.headers_html || 'Brak wybranych nagłówków')
+                              }
                             />
                           </div>
                         )}
@@ -436,9 +437,9 @@ export function StageEditor({ projectId, currentStage, onDataChanged, isRunning 
                           <div className="mt-1 p-3 bg-white rounded border">
                             <div
                               className="prose prose-sm max-w-none"
-                              dangerouslySetInnerHTML={{
-                                __html: formatBriefHtml(stageData.brief?.brief_html || '')
-                              }}
+                              dangerouslySetInnerHTML={
+                                createSafeHtml(formatBriefHtml(stageData.brief?.brief_html || ''))
+                              }
                             />
                           </div>
                         )}
