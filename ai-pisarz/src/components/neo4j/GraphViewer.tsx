@@ -351,12 +351,14 @@ export default function GraphViewer() {
     return Math.abs(hash).toString(36)
   }
 
-  const handleNodeClick = useCallback((node: GraphNode) => {
-    setSelectedNode(node)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleNodeClick = useCallback((node: any) => {
+    const graphNode = node as GraphNode
+    setSelectedNode(graphNode)
 
     // Center on node
-    if (graphRef.current && node.x !== undefined && node.y !== undefined) {
-      graphRef.current.centerAt(node.x, node.y, 500)
+    if (graphRef.current && graphNode.x !== undefined && graphNode.y !== undefined) {
+      graphRef.current.centerAt(graphNode.x, graphNode.y, 500)
       graphRef.current.zoom(2, 500)
     }
   }, [])
@@ -369,7 +371,9 @@ export default function GraphViewer() {
   }
 
   // Custom node rendering
-  const paintNode = useCallback((node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const paintNode = useCallback((nodeObj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const node = nodeObj as GraphNode
     // Skip if coordinates not ready
     const x = node.x
     const y = node.y
