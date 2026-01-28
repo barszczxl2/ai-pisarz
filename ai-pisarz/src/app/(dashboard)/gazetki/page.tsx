@@ -22,9 +22,15 @@ import {
   Package,
   Cpu,
   ChevronDown,
+  Download,
+  FolderOpen,
+  HardDrive,
+  ChevronRight,
+  RefreshCw,
 } from 'lucide-react';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { ProductSearchResult, OCRExtractedProduct, PRODUCT_CATEGORY_LABELS, ProductCategory } from '@/types/database';
+import { FlyerMetadata } from '@/types/flyer';
 import { ProductCard, ProductGrid } from '@/components/gazetki/ProductCard';
 import { CropEditor } from '@/components/gazetki/CropEditor';
 
@@ -94,6 +100,29 @@ interface CropEditorState {
   sourceImageUrl: string;
 }
 
+interface DownloadState {
+  isDownloading: boolean;
+  downloadUrl: string;
+  downloadedFlyers: FlyerMetadata[];
+  isListOpen: boolean;
+  isLoadingList: boolean;
+  downloadProgress: string;
+  downloadError: string | null;
+  lastDownloadResult: {
+    success: boolean;
+    directoryName: string;
+    pageCount: number;
+  } | null;
+}
+
+interface AvailableFlyer {
+  id: number;
+  title: string;
+  link: string;
+  pub_date: string | null;
+  storeName: string;
+}
+
 export default function GazetkiPage() {
   // Search state
   const [query, setQuery] = useState('');
@@ -142,6 +171,22 @@ export default function GazetkiPage() {
     productName: '',
     sourceImageUrl: '',
   });
+
+  // Download state
+  const [download, setDownload] = useState<DownloadState>({
+    isDownloading: false,
+    downloadUrl: '',
+    downloadedFlyers: [],
+    isListOpen: false,
+    isLoadingList: false,
+    downloadProgress: '',
+    downloadError: null,
+    lastDownloadResult: null,
+  });
+
+  // Available flyers from database
+  const [availableFlyers, setAvailableFlyers] = useState<AvailableFlyer[]>([]);
+  const [loadingAvailable, setLoadingAvailable] = useState(true);
 
   // Load available models on mount
   useEffect(() => {
@@ -212,6 +257,134 @@ export default function GazetkiPage() {
 
     loadStats();
   }, []);
+
+  // Load available flyers from database
+  useEffect(() => {
+    const loadAvailableFlyers = async () => {
+      try {
+        const supabase = getSupabaseClient();
+        const { data } = await supabase
+          .from('rrs_blix_gazetki')
+          .select('id, title, link, pub_date')
+          .not('link', 'is', null)
+          .order('pub_date', { ascending: false })
+          .limit(100);
+
+        if (data) {
+          const flyers: AvailableFlyer[] = data.map((item: { id: number; title: string; link: string | null; pub_date: string | null }) => {
+            // Extract store name from title
+            const match = item.title.match(/Gazetka\s+([^-]+)/i);
+            const storeName = match ? match[1].trim() : item.title.split(' ')[0];
+            return {
+              id: item.id,
+              title: item.title,
+              link: item.link,
+              pub_date: item.pub_date,
+              storeName,
+            };
+          });
+          setAvailableFlyers(flyers);
+        }
+      } catch (err) {
+        console.error('Error loading available flyers:', err);
+      } finally {
+        setLoadingAvailable(false);
+      }
+    };
+
+    loadAvailableFlyers();
+  }, []);
+
+  // Load downloaded flyers
+  const loadDownloadedFlyers = useCallback(async () => {
+    setDownload(prev => ({ ...prev, isLoadingList: true }));
+    try {
+      const response = await fetch('/api/download-flyer?action=list');
+      if (response.ok) {
+        const data = await response.json();
+        setDownload(prev => ({
+          ...prev,
+          downloadedFlyers: data.flyers || [],
+          isLoadingList: false,
+        }));
+      }
+    } catch (err) {
+      console.error('Error loading downloaded flyers:', err);
+      setDownload(prev => ({ ...prev, isLoadingList: false }));
+    }
+  }, []);
+
+  // Load downloaded flyers on mount
+  useEffect(() => {
+    loadDownloadedFlyers();
+  }, [loadDownloadedFlyers]);
+
+  // Download flyer handler
+  const handleDownloadFlyer = useCallback(async () => {
+    const url = download.downloadUrl.trim();
+    if (!url) return;
+
+    setDownload(prev => ({
+      ...prev,
+      isDownloading: true,
+      downloadError: null,
+      downloadProgress: 'Rozpoczynam pobieranie...',
+      lastDownloadResult: null,
+    }));
+
+    try {
+      const response = await fetch('/api/download-flyer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flyerUrl: url }),
+      });
+
+      const data = await response.json();
+
+      if (data.alreadyExists) {
+        setDownload(prev => ({
+          ...prev,
+          isDownloading: false,
+          downloadProgress: '',
+          downloadError: null,
+          lastDownloadResult: {
+            success: true,
+            directoryName: data.directoryPath.split('/').pop() || '',
+            pageCount: 0,
+          },
+        }));
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Blad pobierania');
+      }
+
+      setDownload(prev => ({
+        ...prev,
+        isDownloading: false,
+        downloadProgress: '',
+        downloadError: null,
+        downloadUrl: '',
+        lastDownloadResult: {
+          success: data.success,
+          directoryName: data.directoryName,
+          pageCount: data.metadata?.pageCount || 0,
+        },
+      }));
+
+      // Reload the list
+      loadDownloadedFlyers();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Nieznany blad';
+      setDownload(prev => ({
+        ...prev,
+        isDownloading: false,
+        downloadProgress: '',
+        downloadError: message,
+      }));
+    }
+  }, [download.downloadUrl, loadDownloadedFlyers]);
 
   // Search handler
   const handleSearch = useCallback(async () => {
@@ -844,6 +1017,198 @@ export default function GazetkiPage() {
             <div className="text-xs text-slate-500">
               <span className="font-medium">Wskazowka:</span> Wklej link do gazetki z Blix.pl.
               System automatycznie pobierze wszystkie strony. Uzyj selektora &quot;Strona&quot; aby przeskakiwac miedzy stronami gazetki.
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Download Flyer Card */}
+      <Card className="border-green-200">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Download className="h-5 w-5 text-green-600" />
+            Pobierz gazetke na dysk
+          </CardTitle>
+          <CardDescription>
+            Zapisz wszystkie strony gazetki jako obrazki na dysku lokalnym
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {/* Flyer selector dropdown */}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Download className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 z-10" />
+                <select
+                  value={download.downloadUrl}
+                  onChange={(e) => setDownload(prev => ({ ...prev, downloadUrl: e.target.value }))}
+                  className="w-full pl-10 pr-10 py-3 text-base border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent appearance-none bg-white cursor-pointer"
+                  disabled={download.isDownloading || loadingAvailable}
+                >
+                  <option value="">
+                    {loadingAvailable ? 'Ładowanie gazetek...' : '-- Wybierz gazetkę do pobrania --'}
+                  </option>
+                  {availableFlyers.map((flyer) => {
+                    const date = flyer.pub_date
+                      ? new Date(flyer.pub_date).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                      : '';
+                    return (
+                      <option key={flyer.id} value={flyer.link || ''}>
+                        {flyer.storeName} - {flyer.title.replace(/^Gazetka\s+[^-]+\s*-\s*/i, '')} {date && `(${date})`}
+                      </option>
+                    );
+                  })}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              </div>
+              <Button
+                onClick={handleDownloadFlyer}
+                disabled={download.isDownloading || !download.downloadUrl.trim()}
+                className="bg-green-600 hover:bg-green-700 px-6"
+                size="lg"
+              >
+                {download.isDownloading ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Pobieram...
+                  </>
+                ) : (
+                  <>
+                    <HardDrive className="mr-2 h-5 w-5" />
+                    Pobierz
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {/* Stats info */}
+            <div className="text-sm text-slate-500">
+              Dostępnych gazetek: <span className="font-medium text-green-600">{availableFlyers.length}</span>
+              {' '}| Sortowanie: od najnowszych
+            </div>
+
+            {/* Download progress */}
+            {download.isDownloading && download.downloadProgress && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>{download.downloadProgress}</span>
+              </div>
+            )}
+
+            {/* Download error */}
+            {download.downloadError && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{download.downloadError}</span>
+              </div>
+            )}
+
+            {/* Download success */}
+            {download.lastDownloadResult && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">
+                <CheckCircle className="h-4 w-4 shrink-0" />
+                <span>
+                  {download.lastDownloadResult.pageCount > 0
+                    ? `Pobrano ${download.lastDownloadResult.pageCount} stron do: ${download.lastDownloadResult.directoryName}`
+                    : `Gazetka juz istnieje: ${download.lastDownloadResult.directoryName}`
+                  }
+                </span>
+              </div>
+            )}
+
+            {/* Downloaded flyers dropdown */}
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 bg-slate-50">
+                <button
+                  onClick={() => setDownload(prev => ({ ...prev, isListOpen: !prev.isListOpen }))}
+                  className="flex items-center gap-2 hover:text-green-700 transition-colors"
+                >
+                  <FolderOpen className="h-4 w-4 text-green-600" />
+                  <span className="font-medium text-slate-700">
+                    Pobrane gazetki ({download.downloadedFlyers.length})
+                  </span>
+                  <ChevronRight
+                    className={`h-4 w-4 text-slate-400 transition-transform ${
+                      download.isListOpen ? 'rotate-90' : ''
+                    }`}
+                  />
+                </button>
+                <button
+                  onClick={() => loadDownloadedFlyers()}
+                  className="p-1.5 rounded hover:bg-slate-200 transition-colors"
+                  disabled={download.isLoadingList}
+                  title="Odśwież listę"
+                >
+                  <RefreshCw className={`h-4 w-4 text-slate-500 ${download.isLoadingList ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+
+              {download.isListOpen && (
+                <div className="max-h-64 overflow-y-auto">
+                  {download.isLoadingList ? (
+                    <div className="p-4 text-center text-slate-500">
+                      <Loader2 className="h-5 w-5 mx-auto animate-spin" />
+                    </div>
+                  ) : download.downloadedFlyers.length === 0 ? (
+                    <div className="p-4 text-center text-slate-500 text-sm">
+                      Brak pobranych gazetek
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {[...download.downloadedFlyers]
+                        .sort((a, b) => new Date(b.validFrom).getTime() - new Date(a.validFrom).getTime())
+                        .map((flyer, index) => (
+                        <div
+                          key={index}
+                          className="px-4 py-3 hover:bg-slate-50 flex items-center justify-between"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-slate-900 truncate">
+                              {flyer.storeName}
+                            </div>
+                            <div className="text-xs text-slate-500 flex items-center gap-2">
+                              <Calendar className="h-3 w-3" />
+                              {flyer.validFrom} - {flyer.validTo}
+                              <span className="text-slate-400">|</span>
+                              {flyer.pageCount} stron
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-purple-600"
+                              onClick={() => {
+                                setOcr(prev => ({
+                                  ...prev,
+                                  imageUrl: flyer.sourceUrl,
+                                  pageNumber: 1,
+                                  totalPages: flyer.pageCount,
+                                }));
+                              }}
+                            >
+                              <ScanLine className="h-4 w-4" />
+                            </Button>
+                            <a
+                              href={flyer.sourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-green-600 hover:text-green-800"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Help text */}
+            <div className="text-xs text-slate-500">
+              <span className="font-medium">Sciezka zapisu:</span> ~/Documents/gazetki/
             </div>
           </div>
         </CardContent>

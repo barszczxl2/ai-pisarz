@@ -292,7 +292,7 @@ function parseBboxFromResponse(response: string): BboxResult[] {
 /**
  * Wyciąga wszystkie URL obrazków stron ze strony Blix.pl
  */
-async function extractAllImageUrlsFromBlixPage(pageUrl: string): Promise<string[]> {
+export async function extractAllImageUrlsFromBlixPage(pageUrl: string): Promise<string[]> {
   console.log('Fetching Blix page:', pageUrl);
 
   const response = await fetch(pageUrl);
@@ -302,7 +302,7 @@ async function extractAllImageUrlsFromBlixPage(pageUrl: string): Promise<string[
 
   const html = await response.text();
 
-  const imagePattern = /https:\/\/imgproxy\.blix\.pl\/image\/leaflet\/\d+\/[a-f0-9]+\.jpg\?ext=webp&(?:amp;)?bucket=3000/g;
+  const imagePattern = /https:\/\/imgproxy\.blix\.pl\/image\/leaflet\/\d+\/[a-f0-9]+\.(jpg|png)\?ext=webp&(?:amp;)?bucket=3000/g;
   const uniqueUrls = new Set<string>();
 
   let match;
@@ -342,7 +342,7 @@ function isBlixPageUrl(url: string): boolean {
 /**
  * Pobiera obrazek z URL i konwertuje do base64
  */
-async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
+export async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
   const response = await fetch(imageUrl);
 
   if (!response.ok) {

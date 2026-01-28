@@ -144,6 +144,24 @@ export const proxyImageSchema = z.object({
 });
 
 /**
+ * Schema dla download flyer
+ */
+export const downloadFlyerSchema = z.object({
+  flyerUrl: z
+    .string()
+    .url('flyerUrl musi być prawidłowym URL')
+    .max(2000, 'URL może mieć maksymalnie 2000 znaków')
+    .refine(
+      (url) => url.includes('blix.pl'),
+      'URL musi być stroną z blix.pl'
+    ),
+  basePath: z
+    .string()
+    .max(500, 'Ścieżka może mieć maksymalnie 500 znaków')
+    .optional(),
+});
+
+/**
  * Typ wyniku walidacji
  */
 type ValidationResult<T> =
