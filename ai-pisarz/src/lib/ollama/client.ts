@@ -302,12 +302,26 @@ export async function extractAllImageUrlsFromBlixPage(pageUrl: string): Promise<
 
   const html = await response.text();
 
-  const imagePattern = /https:\/\/imgproxy\.blix\.pl\/image\/leaflet\/\d+\/[a-f0-9]+\.(jpg|png)\?ext=webp&(?:amp;)?bucket=3000/g;
+  // Extract gazetka ID from URL to filter only images belonging to this flyer
+  const gazetkaIdMatch = pageUrl.match(/gazetka\/(\d+)/);
+  const gazetkaId = gazetkaIdMatch ? gazetkaIdMatch[1] : null;
+
+  // Match imgproxy URLs with any bucket size (800, 3000, etc.) or without bucket param
+  // Also support UUID-style filenames (e.g., 14180c10-9f9a-4555-950b-f3849384f149)
+  const imagePattern = /https:\/\/imgproxy\.blix\.pl\/image\/leaflet\/\d+\/[a-f0-9-]+\.(jpg|png)(?:\?ext=(?:webp|jpg)(?:&(?:amp;)?bucket=\d+)?)?/g;
   const uniqueUrls = new Set<string>();
 
   let match;
   while ((match = imagePattern.exec(html)) !== null) {
-    const url = match[0].replace('&amp;', '&');
+    let url = match[0].replace('&amp;', '&');
+    // Filter only images from this specific gazetka if we have the ID
+    if (gazetkaId && !url.includes(`/leaflet/${gazetkaId}/`)) continue;
+    // Upgrade to highest quality bucket (3000) for OCR
+    if (url.includes('bucket=')) {
+      url = url.replace(/bucket=\d+/, 'bucket=3000');
+    } else if (url.includes('?ext=')) {
+      url = url + '&bucket=3000';
+    }
     uniqueUrls.add(url);
   }
 
